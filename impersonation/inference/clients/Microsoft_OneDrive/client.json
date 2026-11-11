@@ -1,0 +1,18 @@
+{
+  "id": "Microsoft_OneDrive",
+  "name": "Microsoft OneDrive",
+  "brand": "OneDrive",
+  "domain": "onedrive.live.com",
+  "executives": [
+    {
+      "name": "Ingrid Hale",
+      "role": "Chief Financial Officer",
+      "photo": "executives/female_088.jpg"
+    },
+    {
+      "name": "Thomas Haldane",
+      "role": "VP of Customer Care",
+      "photo": "executives/male_113.jpg"
+    }
+  ]
+}

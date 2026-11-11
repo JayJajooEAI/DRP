@@ -1,0 +1,18 @@
+{
+  "id": "Apple",
+  "name": "Apple",
+  "brand": "Apple",
+  "domain": "apple.com",
+  "executives": [
+    {
+      "name": "Kevin Lindqvist",
+      "role": "VP of Customer Care",
+      "photo": "executives/male_038.jpg"
+    },
+    {
+      "name": "Sofia Tanaka",
+      "role": "Chief Security Officer",
+      "photo": "executives/female_062.jpg"
+    }
+  ]
+}

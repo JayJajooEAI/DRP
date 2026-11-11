@@ -1,0 +1,18 @@
+{
+  "id": "PayPal",
+  "name": "PayPal",
+  "brand": "PayPal",
+  "domain": "paypal.com",
+  "executives": [
+    {
+      "name": "Elena Brandt",
+      "role": "Chief Financial Officer",
+      "photo": "executives/female_055.jpg"
+    },
+    {
+      "name": "Oliver Tanaka",
+      "role": "VP of Customer Care",
+      "photo": "executives/male_061.jpg"
+    }
+  ]
+}

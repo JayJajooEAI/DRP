@@ -1,0 +1,18 @@
+{
+  "id": "WeTransfer",
+  "name": "WeTransfer",
+  "brand": "WeTransfer",
+  "domain": "wetransfer.com",
+  "executives": [
+    {
+      "name": "Oliver Moreau",
+      "role": "Head of Global Support",
+      "photo": "executives/male_075.jpg"
+    },
+    {
+      "name": "Hannah Novak",
+      "role": "Chief Customer Officer",
+      "photo": "executives/female_147.jpg"
+    }
+  ]
+}

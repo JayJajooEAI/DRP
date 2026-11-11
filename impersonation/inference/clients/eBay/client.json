@@ -1,0 +1,18 @@
+{
+  "id": "eBay",
+  "name": "eBay",
+  "brand": "eBay",
+  "domain": "ebay.com",
+  "executives": [
+    {
+      "name": "Daniel Ferreira",
+      "role": "Chief Customer Officer",
+      "photo": "executives/male_042.jpg"
+    },
+    {
+      "name": "Oliver Ellery",
+      "role": "VP of Customer Care",
+      "photo": "executives/male_062.jpg"
+    }
+  ]
+}

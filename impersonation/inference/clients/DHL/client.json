@@ -1,0 +1,18 @@
+{
+  "id": "DHL",
+  "name": "DHL",
+  "brand": "DHL",
+  "domain": "dhl.com",
+  "executives": [
+    {
+      "name": "Mei Ferreira",
+      "role": "Chief Executive Officer",
+      "photo": "executives/female_089.jpg"
+    },
+    {
+      "name": "Samuel Ferreira",
+      "role": "Chief Financial Officer",
+      "photo": "executives/male_037.jpg"
+    }
+  ]
+}

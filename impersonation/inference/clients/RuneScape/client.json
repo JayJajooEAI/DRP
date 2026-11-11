@@ -1,0 +1,18 @@
+{
+  "id": "RuneScape",
+  "name": "RuneScape",
+  "brand": "RuneScape",
+  "domain": "runescape.com",
+  "executives": [
+    {
+      "name": "Victor Ellery",
+      "role": "VP of Customer Care",
+      "photo": "executives/male_005.jpg"
+    },
+    {
+      "name": "Hannah Castellan",
+      "role": "Head of Global Support",
+      "photo": "executives/female_132.jpg"
+    }
+  ]
+}

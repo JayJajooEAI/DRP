@@ -1,0 +1,18 @@
+{
+  "id": "Dropbox",
+  "name": "Dropbox",
+  "brand": "Dropbox",
+  "domain": "dropbox.com",
+  "executives": [
+    {
+      "name": "Samuel Hale",
+      "role": "Chief Customer Officer",
+      "photo": "executives/male_020.jpg"
+    },
+    {
+      "name": "Thomas Moreau",
+      "role": "Head of Global Support",
+      "photo": "executives/male_064.jpg"
+    }
+  ]
+}

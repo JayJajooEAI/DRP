@@ -1,0 +1,18 @@
+{
+  "id": "Outlook",
+  "name": "Outlook",
+  "brand": "Outlook",
+  "domain": "outlook.com",
+  "executives": [
+    {
+      "name": "Sofia Marlow",
+      "role": "Chief Executive Officer",
+      "photo": "executives/female_129.jpg"
+    },
+    {
+      "name": "Nadia Hale",
+      "role": "Chief Security Officer",
+      "photo": "executives/female_127.jpg"
+    }
+  ]
+}

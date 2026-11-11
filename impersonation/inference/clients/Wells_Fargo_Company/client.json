@@ -1,0 +1,18 @@
+{
+  "id": "Wells_Fargo_Company",
+  "name": "Wells Fargo & Company",
+  "brand": "Wells Fargo",
+  "domain": "wellsfargo.com",
+  "executives": [
+    {
+      "name": "Samuel Ellery",
+      "role": "Chief Executive Officer",
+      "photo": "executives/male_122.jpg"
+    },
+    {
+      "name": "Samuel Novak",
+      "role": "Chief Customer Officer",
+      "photo": "executives/male_159.jpg"
+    }
+  ]
+}

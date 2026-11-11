@@ -1,0 +1,14 @@
+# Track only the impersonation code and the model weights. Everything else in DRP stays out for now.
+/*
+!/.gitignore
+!/impersonation/
+
+# Inside impersonation: no data, no run outputs, no virtualenv, no sample screenshots
+/impersonation/data/
+/impersonation/outputs/
+/impersonation/.venv/
+/impersonation/inference/samples/
+
+__pycache__/
+*.pyc
+.pytest_cache/

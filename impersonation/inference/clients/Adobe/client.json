@@ -1,0 +1,18 @@
+{
+  "id": "Adobe",
+  "name": "Adobe",
+  "brand": "Adobe",
+  "domain": "adobe.com",
+  "executives": [
+    {
+      "name": "Daniel Haldane",
+      "role": "VP of Customer Care",
+      "photo": "executives/male_032.jpg"
+    },
+    {
+      "name": "Kevin Novak",
+      "role": "Head of Global Support",
+      "photo": "executives/male_033.jpg"
+    }
+  ]
+}

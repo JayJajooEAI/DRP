@@ -1,0 +1,15 @@
+fastapi==0.162.4
+uvicorn[standard]==0.54.0
+python-multipart==0.0.33
+torch==2.14.1
+python-doctr==1.1.0
+transformers==5.20.2
+lightgbm==4.7.0
+scikit-learn==1.9.1
+opencv-python-headless==5.0.0.93
+rapidfuzz==3.14.6
+openai==3.40.0
+pillow==12.1.1
+pandas==3.0.6
+numpy==2.5.4
+joblib==1.6.0

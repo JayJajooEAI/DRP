@@ -1,0 +1,18 @@
+{
+  "id": "Amazon",
+  "name": "Amazon",
+  "brand": "Amazon",
+  "domain": "amazon.com",
+  "executives": [
+    {
+      "name": "Kevin Ellery",
+      "role": "Chief Customer Officer",
+      "photo": "executives/male_147.jpg"
+    },
+    {
+      "name": "Victor Tanaka",
+      "role": "Head of Global Support",
+      "photo": "executives/male_128.jpg"
+    }
+  ]
+}

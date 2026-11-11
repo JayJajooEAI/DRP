@@ -1,0 +1,18 @@
+{
+  "id": "Steam",
+  "name": "Steam",
+  "brand": "Steam",
+  "domain": "steampowered.com",
+  "executives": [
+    {
+      "name": "Hannah Marlow",
+      "role": "Head of Global Support",
+      "photo": "executives/female_021.jpg"
+    },
+    {
+      "name": "Nadia Okafor",
+      "role": "Head of Global Support",
+      "photo": "executives/female_098.jpg"
+    }
+  ]
+}

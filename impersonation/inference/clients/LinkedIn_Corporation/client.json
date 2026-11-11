@@ -1,0 +1,18 @@
+{
+  "id": "LinkedIn_Corporation",
+  "name": "LinkedIn Corporation",
+  "brand": "LinkedIn",
+  "domain": "linkedin.com",
+  "executives": [
+    {
+      "name": "Kevin Whitfield",
+      "role": "Chief Customer Officer",
+      "photo": "executives/male_100.jpg"
+    },
+    {
+      "name": "Thomas Brandt",
+      "role": "Head of Global Support",
+      "photo": "executives/male_145.jpg"
+    }
+  ]
+}
