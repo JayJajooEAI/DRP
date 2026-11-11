@@ -1,32 +1,104 @@
-"""The client registry: what each protected client supplies (brand, official domain, logo, protected executives with photos).
+"""Client profiles, fetched from RDS (schema drp_clients): what the protected client supplies and what was precomputed for it.
 
-Layout of the clients folder:
-    clients/<client_id>/client.json      {"id", "name", "brand", "domain", "executives": [{"name", "role", "photo"}]}
-    clients/<client_id>/logo.png         the client's avatar / logo
-    clients/<client_id>/executives/*.jpg executive photos (paths are listed in client.json)
-To protect a new client, add a folder like this and restart the service."""
+For one client id the service reads
+    customers + pipeline_metadata   the client exists and is used by the impersonation pipeline; brand name
+    customer_domains                the official (main) domain
+    executives                      protected executives: name and title
+    impersonation_embeddings        the stored CLIP vectors of the logo (2 sizes) and of each executive photo
+    assets                          the logo image and the executive photos (needed for the pixel-correlation check and for Luna)
+A client is cached in memory for CLIENT_CACHE_TTL_S seconds, so a change in RDS is picked up without restarting."""
 
-import json
-from pathlib import Path
+import io
+import threading
+import time
 
-from pipeline.settings import CLIENTS_DIR
+import numpy as np
+import psycopg
+from PIL import Image
+
+from pipeline.settings import CLIENT_CACHE_TTL_S, RDS, RDS_SCHEMA
 
 
-def load_clients(root=CLIENTS_DIR):
-    """Read every client folder -> {client_id: profile}. The profile has the keys the signals code expects: brand, domain, logo, execs."""
-    out = {}
-    for d in sorted(Path(root).iterdir()):
-        f = d / "client.json"
-        if not f.exists():
-            continue
-        j = json.loads(f.read_text())
+class RdsUnavailable(RuntimeError):
+    """RDS is not configured or cannot be reached."""
 
-        # execs = protected executives; photo is an absolute path, or None when no photo is available
-        execs = [
-            dict(name=e["name"], role=e["role"], photo=(str(d / e["photo"]) if e.get("photo") else None))
-            for e in j.get("executives", [])
-        ]
-        out[j["id"]] = dict(
-            id=j["id"], name=j["name"], brand=j["brand"], domain=j["domain"], logo=str(d / "logo.png"), execs=execs
+
+def _img(data):
+    """bytes -> PIL image (fully loaded, so the connection data is not kept alive)."""
+    im = Image.open(io.BytesIO(bytes(data)))
+    im.load()
+    return im
+
+
+class RdsClients:
+    def __init__(self):
+        missing = [k for k in ("host", "user", "password") if not RDS[k]]
+        if missing:
+            raise RdsUnavailable("set the environment variables " + ", ".join("RDS_" + k.upper() for k in missing))
+        self._cache = {}
+        self._lock = threading.Lock()
+
+    def _connect(self):
+        try:
+            return psycopg.connect(**RDS, connect_timeout=10, options=f"-c search_path={RDS_SCHEMA}")
+        except psycopg.Error as e:
+            raise RdsUnavailable(f"cannot connect to RDS ({type(e).__name__})")
+
+    def ids(self):
+        """Every client the impersonation pipeline can check: [{id, name, brand, domain}]."""
+        with self._connect() as con:
+            cur = con.execute(
+                """SELECT c.customer_id, c.display_name, c.brand,
+                          (SELECT domain FROM customer_domains d WHERE d.customer_id = c.customer_id AND d.domain_type = 'main' LIMIT 1)
+                   FROM customers c JOIN pipeline_metadata p ON p.customer_id = c.customer_id AND p.pipeline = 'impersonation'
+                   ORDER BY c.customer_id"""
+            )
+            return [dict(id=a, name=b, brand=c, domain=d) for a, b, c, d in cur.fetchall()]
+
+    def get(self, client_id):
+        """The full profile of one client, or None if it is not an impersonation client."""
+        with self._lock:
+            hit = self._cache.get(client_id)
+            if hit and time.time() - hit[0] < CLIENT_CACHE_TTL_S:
+                return hit[1]
+        client = self._fetch(client_id)
+        if client is not None:
+            with self._lock:
+                self._cache[client_id] = (time.time(), client)
+        return client
+
+    def _fetch(self, cid):
+        with self._connect() as con:
+            row = con.execute(
+                """SELECT c.customer_id, c.display_name, c.brand FROM customers c
+                   JOIN pipeline_metadata p ON p.customer_id = c.customer_id AND p.pipeline = 'impersonation' WHERE c.customer_id = %s""",
+                (cid,),
+            ).fetchone()
+            if row is None:
+                return None
+            dom = con.execute("SELECT domain FROM customer_domains WHERE customer_id = %s AND domain_type = 'main' LIMIT 1", (cid,)).fetchone()
+            execs = con.execute("SELECT executive_id, name, title FROM executives WHERE customer_id = %s ORDER BY executive_id", (cid,)).fetchall()
+
+            # the logo: its image and its two stored CLIP vectors (full size and 78 %)
+            logo = con.execute(
+                """SELECT a.data, i.variant, i.embedding FROM impersonation_embeddings i JOIN assets a USING (asset_id)
+                   WHERE i.customer_id = %s AND i.kind = 'logo' ORDER BY i.variant""",
+                (cid,),
+            ).fetchall()
+            if not logo:
+                raise RdsUnavailable(f"client {cid} has no stored logo embedding")
+
+            # the executive photos: image + stored CLIP vector, per executive
+            photos = con.execute(
+                """SELECT i.executive_id, a.data, i.embedding FROM impersonation_embeddings i JOIN assets a USING (asset_id)
+                   WHERE i.customer_id = %s AND i.kind = 'executive_photo' ORDER BY i.executive_id""",
+                (cid,),
+            ).fetchall()
+
+        return dict(
+            id=row[0], name=row[1], brand=row[2], domain=dom[0] if dom else "",
+            execs=[dict(name=n, role=t) for _, n, t in execs],
+            logo_image=_img(logo[0][0]),
+            logo_vecs=np.array([e for _, _, e in logo], dtype=np.float32),
+            photos=[(_img(d).convert("RGB"), np.array(e, dtype=np.float32)) for _, d, e in photos],
         )
-    return out

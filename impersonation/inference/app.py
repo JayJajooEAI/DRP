@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
+from pipeline.clients import RdsUnavailable
 from pipeline.engine import BadImage, Engine, UnknownClient
 from pipeline.settings import MAX_UPLOAD_MB
 
@@ -41,7 +42,10 @@ def health():
 
 @app.get("/clients")
 def clients():
-    return [dict(id=c["id"], name=c["name"], brand=c["brand"], domain=c["domain"]) for c in ENGINE["e"].clients.values()]
+    try:
+        return ENGINE["e"].clients.ids()
+    except RdsUnavailable as e:
+        raise HTTPException(503, str(e))
 
 
 # A plain `def` (not async) runs in a worker thread, so a slow request does not block the server
@@ -56,3 +60,5 @@ def predict(file: UploadFile = File(...), client: str = Form(...), use_luna: boo
         raise HTTPException(404, f"unknown client '{client}'; see GET /clients")
     except BadImage as e:
         raise HTTPException(400, str(e))
+    except RdsUnavailable as e:
+        raise HTTPException(503, str(e))

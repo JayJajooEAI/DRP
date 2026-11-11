@@ -1,5 +1,5 @@
-"""Step 1c: avatar matching. Crop the avatar from its fixed box, then compare it with the client's logo, the client's executive photos and a generic
-default avatar, using CLIP (meaning-level similarity) and masked pixel correlation (shape-level similarity). Same maths as the batch pipeline."""
+"""Step 1c: avatar matching. Crop the avatar from its fixed box, then compare it with the client's logo, the client's executive photos (their CLIP
+vectors are stored in RDS) and a generic default avatar, using CLIP (meaning-level similarity) and masked pixel correlation (shape-level similarity). Same maths as the batch pipeline."""
 
 import numpy as np
 import torch
@@ -14,9 +14,9 @@ BOX = {"feed": (80, 172, 192, 284), "grid": (80, 88, 206, 214), "pro": (80, 164,
 CLIP_NAME = "openai/clip-vit-base-patch32"
 
 
-def _logo_variants(path):
+def _logo_variants(image):
     """The logo on a white 200x200 square at two sizes (full and 78%)."""
-    im = Image.open(path).convert("RGBA")
+    im = image.convert("RGBA")
     out = []
     for s in (1.0, 0.78):
         c = Image.new("RGB", (200, 200), "white")
@@ -68,24 +68,12 @@ def _inners(crop):
 
 
 class AvatarMatcher:
-    def __init__(self, clients):
-        # Load CLIP once (image + text halves; only the image half is used)
+    def __init__(self):
+        # CLIP is loaded once, to embed the avatar crop of each incoming screenshot (the references come from RDS)
         use_cuda = torch.cuda.is_available() and DEVICE in ("auto", "cuda")
         self.dev = "cuda" if use_cuda else "cpu"
         self.model = CLIPModel.from_pretrained(CLIP_NAME).to(self.dev).eval()
         self.proc = CLIPProcessor.from_pretrained(CLIP_NAME)
-
-        # Reference data per client: logo variants and executive photos, as CLIP vectors (le / ee) and gray images (ln / en)
-        self.ref = {}
-        for cid, c in clients.items():
-            lv = _logo_variants(c["logo"])
-            ex = [Image.open(e["photo"]).convert("RGB") for e in c["execs"] if e["photo"]]
-            self.ref[cid] = dict(
-                le=self._emb(lv),
-                ln=[_gray(i) for i in lv],
-                ee=self._emb(ex) if ex else None,
-                en=[_gray(i) for i in ex],
-            )
 
         # The default-avatar reference
         sil = _silhouette()
@@ -100,12 +88,25 @@ class AvatarMatcher:
         e = e if torch.is_tensor(e) else e.pooler_output
         return torch.nn.functional.normalize(e, dim=-1).cpu().numpy()
 
-    def match(self, img, platform, client_id):
-        """img = the screenshot (PIL RGB, 900x900). Returns the avatar scores used by the signals step."""
+    @staticmethod
+    def _reference(client):
+        """The client's comparison data: stored CLIP vectors (le, ee) plus gray images for the pixel check (ln, en). Built once per fetched client."""
+        if "_ref" not in client:
+            ph = client["photos"]
+            client["_ref"] = dict(
+                le=client["logo_vecs"],
+                ln=[_gray(i) for i in _logo_variants(client["logo_image"])],
+                ee=np.stack([e for _, e in ph]) if ph else None,
+                en=[_gray(i) for i, _ in ph],
+            )
+        return client["_ref"]
+
+    def match(self, img, platform, client):
+        """img = the screenshot (PIL RGB, 900x900), client = the profile from RDS. Returns the avatar scores used by the signals step."""
         # Crop the avatar from the box that belongs to this platform's layout
         crop = img.crop(BOX[LAYOUT.get(platform, "feed")])
         e = self._emb([crop])[0]
-        R = self.ref[client_id]
+        R = self._reference(client)
 
         # ics = 5 margin crops, gs = their gray arrays; the middle one (7% margin) is used for the colour stats and the default-avatar check
         ics = _inners(crop)

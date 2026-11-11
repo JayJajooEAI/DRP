@@ -67,7 +67,7 @@ def build_input(client, s, screenshot):
     content = [
         {"type": "input_text", "text": text},
         {"type": "input_text", "text": "Client's official logo:"},
-        _img(Image.open(client["logo"]), 300),
+        _img(client["logo_image"], 300),
         {"type": "input_text", "text": "## 2. Screenshot of the profile to judge:"},
         _img(screenshot),
     ]

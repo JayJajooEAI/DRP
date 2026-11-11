@@ -12,3 +12,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Secrets and local settings: never commit
+.env
+*.env

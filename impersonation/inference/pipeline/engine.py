@@ -10,7 +10,7 @@ import pandas as pd
 from PIL import Image
 
 from pipeline.avatar import AvatarMatcher
-from pipeline.clients import load_clients
+from pipeline.clients import RdsClients, RdsUnavailable
 from pipeline.features import feats
 from pipeline.layout_parser import parse
 from pipeline.luna import Luna
@@ -30,12 +30,12 @@ class UnknownClient(KeyError):
 
 class Engine:
     def __init__(self):
-        # Everything is loaded once, at startup: client registry, frozen model + thresholds, OCR, CLIP, Luna client
-        self.clients = load_clients()
+        # Loaded once at startup: the frozen model + thresholds (local), OCR, CLIP, Luna client. Client data is fetched from RDS per request (cached).
+        self.clients = RdsClients()
         F = joblib.load(MODEL_FILE)
         self.model, self.art = F["model"], F["art"]
         self.ocr = OCR()
-        self.avatar = AvatarMatcher(self.clients)
+        self.avatar = AvatarMatcher()
         self.luna = Luna()
 
         # The neural models are shared by all requests, so use them one request at a time
@@ -44,8 +44,12 @@ class Engine:
     def info(self):
         """Facts about the loaded model (for the /health endpoint)."""
         a = self.art
+        try:
+            n_clients = len(self.clients.ids())
+        except RdsUnavailable as e:
+            n_clients = f"unavailable: {e}"
         return dict(
-            clients=len(self.clients),
+            clients=n_clients,
             device=self.ocr.device,
             rule_thresholds=dict(not_impersonation_at_or_below=a["rule_lo"], impersonation_at_or_above=a["rule_hi"]),
             ml_thresholds=dict(not_impersonation_at_or_below=a["ml_lo"], impersonation_at_or_above=a["ml_hi"]),
@@ -68,9 +72,9 @@ class Engine:
 
     def predict(self, data, client_id, use_luna=True):
         """data = the screenshot file's bytes, client_id = which protected client to check against. Returns a JSON-ready dict."""
-        if client_id not in self.clients:
+        client = self.clients.get(client_id)
+        if client is None:
             raise UnknownClient(client_id)
-        client = self.clients[client_id]
         img, resized = self._load_image(data)
         t = {}
         t0 = time.time()
@@ -85,7 +89,7 @@ class Engine:
             t["parse"] = time.time()
 
             # Step 1c: avatar matching against this client's logo and executive photos
-            av = self.avatar.match(img, parsed["platform"], client_id)
+            av = self.avatar.match(img, parsed["platform"], client)
             t["avatar"] = time.time()
 
         # Step 1d: about 100 signals, as a one-row table

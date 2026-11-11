@@ -13,3 +13,4 @@ pillow==12.1.1
 pandas==3.0.6
 numpy==2.5.4
 joblib==1.6.0
+psycopg[binary]==3.3.8
