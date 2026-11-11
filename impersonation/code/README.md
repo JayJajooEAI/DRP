@@ -17,3 +17,9 @@ Run from this `code/` folder, in order (train and val first; test only once, at 
 
 `utilities/` holds the shared modules (config, layout parser, signals, rules, LightGBM, cascade, Luna client, report sections and template).
 Luna needs `OPENAI_API_KEY` in the environment, or in the file named by `OPENAI_ENV_FILE`. Set `IMPERSONATION_OUT` to write outputs elsewhere.
+
+## Notes
+- This folder reads **local files only**: the screenshots, lists and assets in `../data/`. It does not use RDS or S3.
+- It does use the network in two places: the OCR and CLIP weights are downloaded on first use, and steps 06 and 08 call Luna (OpenAI).
+- Step 05 freezes the pipeline with checksums of the code and the fitted model. Step 08 refuses to run on test if any of them changed, so editing a file after step 05 means running 05 again first.
+- The inference service in `../inference/` is a separate, self-contained copy of these steps for one screenshot at a time.

@@ -4,7 +4,17 @@
 !/impersonation/
 
 # Inside impersonation: no data, no run outputs, no virtualenv, no sample screenshots
-/impersonation/data/
+/impersonation/data/*
+!/impersonation/data/README.md
+!/impersonation/data/assets/
+/impersonation/data/assets/*
+!/impersonation/data/assets/README.md
+!/impersonation/data/reference/
+/impersonation/data/reference/*
+!/impersonation/data/reference/README.md
+!/impersonation/data/screenshots/
+/impersonation/data/screenshots/*
+!/impersonation/data/screenshots/README.md
 /impersonation/outputs/
 /impersonation/.venv/
 /impersonation/inference/samples/
