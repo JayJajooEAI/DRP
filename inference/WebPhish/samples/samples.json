@@ -1,0 +1,26 @@
+[
+ {
+  "client": "paypal",
+  "url": "http://infosantioana.hi2.ro/php/update/",
+  "truth": "web_phish",
+  "case": "3.1"
+ },
+ {
+  "client": "linkedin_corporation",
+  "url": "https://cannabisindustryexpos.com/No_reply_linkdine/linkedin_/login.php",
+  "truth": "web_phish",
+  "case": "3.1"
+ },
+ {
+  "client": "amazon",
+  "url": "http://rerbgf.ama-service.club/samsung.html",
+  "truth": "not_web_phish",
+  "case": "none"
+ },
+ {
+  "client": "netflix",
+  "url": "https://mail.artisanselections.com/",
+  "truth": "not_web_phish",
+  "case": "none"
+ }
+]

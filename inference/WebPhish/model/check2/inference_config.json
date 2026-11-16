@@ -1,0 +1,37 @@
+{
+ "model_id": "jhu-clsp/mmBERT-base",
+ "check": 2,
+ "labels": [
+  "False",
+  "True"
+ ],
+ "max_len": 8192,
+ "fields": [
+  "client",
+  "title",
+  "headings",
+  "brand_hints",
+  "forms",
+  "script_urls",
+  "links",
+  "visible_text",
+  "ocr_text",
+  "signals"
+ ],
+ "cut_order": [
+  "visible_text",
+  "ocr_text",
+  "script_urls",
+  "brand_hints",
+  "headings",
+  "links",
+  "forms",
+  "title"
+ ],
+ "prompt_data": "ApproachB/output/04_prompt_format/check2.parquet",
+ "eval_token_budget": 32768,
+ "eval_max_rows": 32,
+ "resumed_from": "ApproachB/output/05_finetune/check2/epoch_6",
+ "lr_schedule_total_steps": 2370,
+ "epoch": 9
+}

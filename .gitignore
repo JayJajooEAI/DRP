@@ -1,13 +1,18 @@
-# Track only the impersonation code and its model weights, plus the shared server. Everything else in DRP stays out for now (web phish included).
+# Track the code, READMEs and small model files of both incident types and the shared server.
+# Left out: every data/ and outputs/ folder, virtualenvs, secrets, sample screenshots, and the four WebPhish weight files over GitHub's 100 MB limit.
 /*
 !/.gitignore
 !/README.md
 !/development/
 !/inference/
 
-# development: only impersonation, and inside it no data, no run outputs, no virtualenv
+# development: both incident types, without their data, run outputs or virtualenv
 /development/*
 !/development/impersonation/
+!/development/WebPhish/
+/development/WebPhish/data/
+/development/WebPhish/outputs/
+/development/WebPhish/.venv/
 /development/impersonation/data/*
 !/development/impersonation/data/README.md
 !/development/impersonation/data/assets/
@@ -22,7 +27,7 @@
 /development/impersonation/outputs/
 /development/impersonation/.venv/
 
-# inference: the shared server files and the impersonation folder (not its sample screenshots)
+# inference: the shared server files and both incident-type folders (not impersonation's sample screenshots)
 /inference/*
 !/inference/app.py
 !/inference/README.md
@@ -31,6 +36,13 @@
 !/inference/.env.example
 !/inference/impersonation/
 /inference/impersonation/samples/
+!/inference/WebPhish/
+
+# WebPhish weight files over 100 MB (the language models and the Phishpedia logo models); copy them in by hand
+/inference/WebPhish/model/check2/model/model.safetensors
+/inference/WebPhish/model/check3/model/model.safetensors
+/inference/WebPhish/model/phishpedia/*.pth
+/inference/WebPhish/model/phishpedia/*.pth.tar
 
 __pycache__/
 *.pyc

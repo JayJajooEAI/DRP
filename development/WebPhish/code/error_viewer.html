@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approach B Error Viewer</title>
+<style>
+/* Layout: top bar with model tabs, sub-tabs per model, then either score tables or a case browser
+   (list + prev/next, screenshot beside the evidence tabs, notes on top). */
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --fg: #18222c; --muted: #5d6b78; --line: #d8dee4; --accent: #1f5f8b;
+  --ok: #1d7a46; --ok-bg: #e2f2e8; --bad: #b3261e; --bad-bg: #fbe6e4; --warn: #9a6200; --warn-bg: #fbf0d9;
+  --code-bg: #f0f2f5;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11171c; --panel: #192229; --fg: #e3e9ee; --muted: #93a2ae; --line: #2c3842; --accent: #6db3e2;
+  --ok: #6fd39a; --ok-bg: #16301f; --bad: #ff8a80; --bad-bg: #3a1c1a; --warn: #f2bc62; --warn-bg: #3a2c12;
+  --code-bg: #10161b; color-scheme: dark } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); }
+header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 16px; display: flex; gap: 16px;
+  align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab { border: 1px solid var(--line); background: transparent; color: var(--fg); padding: 6px 12px; border-radius: 6px;
+  cursor: pointer; font: inherit; }
+.tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tab:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+main { padding: 16px; max-width: 1700px; margin: 0 auto; }
+.subbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+h2 { font-size: 15px; margin: 0 0 8px; } h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em; }
+table.cm { border-collapse: collapse; font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+table.cm th, table.cm td { border: 1px solid var(--line); padding: 6px 10px; text-align: right; }
+table.cm th { background: var(--code-bg); font-weight: 600; }
+table.cm td.hit { background: var(--ok-bg); } table.cm td.miss { background: var(--bad-bg); }
+table.cm td small { color: var(--muted); }
+.note { color: var(--muted); font-size: 12px; }
+.browser { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.nav select { min-width: 320px; max-width: 100%; }
+select, button.btn { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--fg); }
+button.btn { cursor: pointer; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+.b-fn { background: var(--bad-bg); color: var(--bad); } .b-fp { background: var(--warn-bg); color: var(--warn); }
+.b-swap { background: var(--code-bg); color: var(--muted); }
+.b-phish { background: var(--bad-bg); color: var(--bad); } .b-benign { background: var(--ok-bg); color: var(--ok); }
+.b-yes { background: var(--bad); color: #fff; } .b-no { background: var(--ok-bg); color: var(--ok); }
+.e2e { margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--code-bg); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+.case { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 1100px) { .case { grid-template-columns: 1fr; } }
+.shot { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+pre.box { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 0;
+  white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 var(--mono); max-height: 75vh; overflow: auto; }
+.notes textarea { width: 100%; min-height: 70px; font: inherit; padding: 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.probs span { margin-right: 10px; font-variant-numeric: tabular-nums; }
+.empty { color: var(--muted); padding: 30px; text-align: center; }
+.saved { color: var(--ok); font-size: 12px; }
+table.vs { border-collapse: collapse; font-variant-numeric: tabular-nums; margin: 6px 0 14px; }
+table.vs th, table.vs td { border: 1px solid var(--line); padding: 6px 10px; text-align: right; }
+table.vs th { background: var(--code-bg); } table.vs td:first-child, table.vs th:first-child { text-align: left; }
+table.vs tr.total td { font-weight: 700; background: var(--code-bg); }
+.linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Approach B Error Viewer</h1>
+  <div class="tabs" role="tablist" id="modelTabs"></div>
+  <div class="tabs" role="tablist" id="subTabs"></div>
+  <label>Split <select id="split"><option value="test">test</option><option value="val">val</option></select></label>
+  <label>Show <select id="impact"><option value="all">all errors</option><option value="yes">only errors that change the final verdict</option><option value="no">only errors that don't</option></select></label>
+  <label>Page <select id="ptype"><option value="all">phishing + benign</option><option value="phishing">phishing only</option><option value="benign">benign only</option></select></label>
+</header>
+<main id="main"></main>
+
+<script src="data/summary.js"></script>
+<script>
+const S = window.SUMMARY;
+const MODELS = {2: "Check 2 — branded", 3: "Check 3 — data capture", final: "Final verdict — Web Phish"};
+const SUBTABS = {2: [["scores","Scores"],["fn","FN cases"],["fp","FP cases"]],
+                 3: [["scores","Scores"],["fn","FN cases"],["fp","FP cases"],["swap","3.1 ↔ 3.2 swaps"]],
+                 final: [["scores","Scores"],["fn","Missed Web Phish (FN)"],["fp","False alarms (FP)"]]};
+const NAME2 = {"False": "not branded", "True": "branded"};
+const state = {model: 2, sub: "scores", split: "test", idx: 0, impact: "all", ptype: "all"};
+const NOTE_KEY = "approachB_error_notes_v1";
+let notes = {};
+try { notes = JSON.parse(localStorage.getItem(NOTE_KEY) || "{}"); } catch (e) { notes = {}; }
+function saveNotes() { try { localStorage.setItem(NOTE_KEY, JSON.stringify(notes)); return true; } catch (e) { return false; } }
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+const label = (m, l) => m === 2 ? NAME2[l] || l : l;
+const modelTitle = m => m === "final" ? `${MODELS[m]} (check 2 ep ${S.epochs[2]} + check 3 ep ${S.epochs[3]} + check 4)` : `${MODELS[m]} (epoch ${S.epochs[m]})`;
+
+function renderTabs() {
+  const mt = document.getElementById("modelTabs"); mt.replaceChildren();
+  for (const m of [2, 3, "final"]) mt.append(el("button", {class: "tab", role: "tab", "aria-selected": String(state.model === m),
+    text: modelTitle(m), onclick: () => { state.model = m; state.sub = "scores"; state.idx = 0; render(); }}));
+  mt.append(el("button", {class: "tab", role: "tab", "aria-selected": String(state.model === "summary"),
+    text: "Verdict summary", onclick: () => { state.model = "summary"; render(); }}));
+  if (state.model === "summary") { document.getElementById("subTabs").replaceChildren(); return; }
+  const st = document.getElementById("subTabs"); st.replaceChildren();
+  for (const [k, name] of SUBTABS[state.model]) {
+    const n = k === "scores" ? "" : ` (${cases(k).length})`;
+    st.append(el("button", {class: "tab", role: "tab", "aria-selected": String(state.sub === k), text: name + n,
+      onclick: () => { state.sub = k; state.idx = 0; render(); }}));
+  }
+}
+
+function cmTable(title, cm, m) {
+  const t = el("table", {class: "cm"});
+  const hr = el("tr", {}, el("th", {text: "Actual \\ Predicted"}));
+  cm.labels.forEach(p => hr.append(el("th", {text: label(m, p)})));
+  hr.append(el("th", {text: "Total"})); t.append(hr);
+  for (const a of cm.labels) {
+    const row = cm.rows[a]; const tot = Object.values(row).reduce((x, y) => x + y, 0);
+    if (!tot) continue;
+    const tr = el("tr", {}, el("th", {text: label(m, a)}));
+    for (const p of cm.labels) {
+      const v = row[p]; const pct = tot ? (100 * v / tot).toFixed(1) : "0.0";
+      const td = el("td", {class: a === p ? "hit" : (v ? "miss" : "")}); td.append(`${v.toLocaleString()} `, el("small", {text: `(${pct}%)`}));
+      tr.append(td);
+    }
+    tr.append(el("td", {text: tot.toLocaleString()})); t.append(tr);
+  }
+  return el("div", {}, el("h3", {text: `${title} — accuracy ${(100 * cm.accuracy).toFixed(1)}%, n=${cm.n.toLocaleString()}`}), t);
+}
+
+function renderFinalScores() {
+  const sc = S.scores.final[state.split], pct = v => v == null ? "–" : (100 * v).toFixed(1) + "%";
+  const p = el("div", {class: "panel"}, el("h2", {text: `Final verdict — Web Phish, ${state.split}`}),
+    el("p", {class: "note", text: "Web Phish = check 1 (assumed live, old captures) AND check 2 model says branded AND check 3 model says 3.1 or 3.2 AND check 4 (not the client's own domain, or a form posting off-domain)."}));
+  const g = el("div", {class: "grid2"});
+  for (const [key, title] of [["vs_labels", "Against the per-check labels (Claude / Codex, routed with the same rules)"]]) {
+    const c = sc[key];
+    const box = el("div", {}, cmTable(title, c, "final"));
+    box.append(el("p", {text: `Precision ${pct(c.precision)} · Recall ${pct(c.recall)} · F1 ${pct(c.f1)} · Accuracy ${pct(c.accuracy)}`}));
+    g.append(box);
+  }
+  p.append(g, el("p", {class: "note", text: `Case 3.1 vs 3.2 correct on true Web Phish: ${pct(sc.case_accuracy_on_tp)} · clients' real pages flagged as Web Phish: ${sc.benign_flagged} of ${sc.benign_total}`}));
+  document.getElementById("main").replaceChildren(p);
+}
+
+function renderScores() {
+  if (state.model === "final") return renderFinalScores();
+  const m = state.model, sc = S.scores[m][state.split];
+  const p = el("div", {class: "panel"}, el("h2", {text: `${MODELS[m]}, epoch ${S.epochs[m]}, ${state.split}`}),
+    el("p", {class: "note", text: "Each cell: count (share of the actual row). Green = correct, red = misclassified."}));
+  const g = el("div", {class: "grid2"});
+  g.append(el("div", {}, cmTable("Zoomed out — all rows", sc.all, m)));
+  const zin = el("div", {});
+  if (m === 2) { zin.append(cmTable("Zoomed in — real pages", sc.real, m), cmTable("Zoomed in — wrong-client pairs", sc.pairs, m)); }
+  else { zin.append(cmTable("Zoomed in — phishing pages", sc.phishing, m), cmTable("Zoomed in — benign brand pages", sc.benign, m)); }
+  g.append(zin); p.append(g);
+  document.getElementById("main").replaceChildren(p);
+}
+
+function cases(tab) { return S.cases.filter(c => c.check === state.model && c.split === state.split && c.tab === tab
+  && (state.impact === "all" || (state.impact === "yes") === c.affects_verdict)
+  && (state.ptype === "all" || c.page_class === state.ptype)); }
+
+function loadCase(id) {
+  return new Promise((resolve, reject) => {
+    if (window.CASE_DATA && window.CASE_DATA[id]) return resolve(window.CASE_DATA[id]);
+    const s = document.createElement("script"); s.src = `data/cases/${id}.js`;
+    s.onload = () => resolve(window.CASE_DATA[id]); s.onerror = () => reject(new Error("could not load " + id));
+    document.head.append(s);
+  });
+}
+
+function renderBrowser() {
+  const list = cases(state.sub), main = document.getElementById("main");
+  if (!list.length) { main.replaceChildren(el("div", {class: "panel empty", text: "No cases of this kind in this split."})); return; }
+  state.idx = Math.max(0, Math.min(state.idx, list.length - 1));
+  const sel = el("select", {id: "caseSelect", "aria-label": "Choose a case", onchange: e => { state.idx = +e.target.value; renderBrowser(); }});
+  list.forEach((c, i) => { const o = el("option", {value: String(i), text: `${i + 1}. ${c.item_id} — ${c.page_class} — ${c.type}${c.affects_verdict ? " — CHANGES VERDICT" : ""}${notes[c.id] && (notes[c.id].text || notes[c.id].verdict) ? " ✎" : ""}`}); if (i === state.idx) o.selected = true; sel.append(o); });
+  const nav = el("div", {class: "nav panel"},
+    el("button", {class: "btn", text: "← Previous", onclick: () => { state.idx = (state.idx - 1 + list.length) % list.length; renderBrowser(); }}),
+    sel,
+    el("button", {class: "btn", text: "Next →", onclick: () => { state.idx = (state.idx + 1) % list.length; renderBrowser(); }}),
+    el("span", {class: "note", text: `${state.idx + 1} of ${list.length} · keys ← →`}),
+    el("button", {class: "btn", text: "Export notes", onclick: exportNotes}),
+    el("label", {class: "btn"}, "Import notes", el("input", {type: "file", accept: ".json,application/json", hidden: "", onchange: importNotes})));
+  const holder = el("div", {class: "browser"}, nav, el("div", {class: "panel", text: "Loading…"}));
+  main.replaceChildren(holder);
+  const c = list[state.idx];
+  loadCase(c.id).then(d => holder.replaceChild(caseView(d), holder.lastChild))
+    .catch(err => holder.replaceChild(el("div", {class: "panel", text: err.message}), holder.lastChild));
+}
+
+function caseView(d) {
+  const m = d.check;
+  const head = el("div", {class: "panel"});
+  head.append(el("div", {}, el("span", {class: `badge b-${d.tab}`, text: d.type}), " ",
+    el("span", {class: `badge ${d.page_class === "phishing" ? "b-phish" : "b-benign"}`, text: d.page_class === "phishing" ? "phishing page" : "benign page (client's own site)"}), " ",
+    el("span", {class: `badge ${d.affects_verdict ? "b-yes" : "b-no"}`, text: d.affects_verdict ? "changes final verdict" : "does not change final verdict"}), " ",
+    el("strong", {text: d.item_id}), el("span", {class: "note", text: `  · ${d.split}`})));
+  const probs = el("div", {class: "probs"});
+  Object.entries(d.probs).forEach(([k, v]) => probs.append(el("span", {text: `P(${label(m, k)}) = ${v.toFixed(4)}`})));
+  const kv = el("dl", {class: "kv"});
+  const add = (k, v) => kv.append(el("dt", {text: k}), el("dd", {text: v}));
+  add("Label (target)", label(m, d.label)); add("Model predicted", label(m, d.pred));
+  add("Prompt client", d.prompt_client + (d.synthetic ? "  (wrong-client pair; page is filed under " + d.item_customer + ")" : ""));
+  add("URL", d.url); if (d.final_url && d.final_url !== d.url) add("Final URL", d.final_url);
+  add("Labeller", d.labeller.source); add("Labeller rationale", d.labeller.rationale || "");
+  add("Label fields", `branded=${d.labeller.check_2_client_branded} (evidence ${d.labeller.check_2_evidence}, matched ${d.labeller.matched_customer}) · check_3=${d.labeller.check_3_case} (source ${d.labeller.check_3_source})`);
+  add("Prompt size", `${d.prompt_chars.toLocaleString()} characters, ${d.n_tokens.toLocaleString()} tokens fed to the model${d.n_tokens >= 8190 ? " (cut to 8,192: visible text / OCR shortened)" : ""}`);
+  const yn = b => b ? "Web Phish" : "not Web Phish";
+  const e2e = el("dl", {class: "kv"});
+  const add2 = (k, v) => e2e.append(el("dt", {text: k}), el("dd", {text: v}));
+  add2("Check 4 (domain)", d.own_domain ? `client's own domain${d.form_posts_off_domain ? ", but a form posts off-domain (counts as compromise)" : " → stops here, checks 2/3 never decide"}` : "not the client's domain → passes");
+  add2("Both models' predictions", `check 2 = ${label(2, d.pred_check2)}, check 3 = ${d.pred_check3}`);
+  add2("Final verdict", `pipeline: ${yn(d.pipeline_web_phish)}   ·   label: ${yn(d.label_web_phish)} (routed to ${d.label_routed_to})`);
+  add2("Impact of this error", d.affects_reason);
+  head.append(probs, kv, el("div", {class: "e2e"}, el("h3", {text: "End-to-end (checks combined)"}), e2e));
+
+  const n = notes[d.id] || {verdict: "", text: ""};
+  const status = el("span", {class: "saved"});
+  const verdict = el("select", {"aria-label": "Your verdict"});
+  VERDICTS.forEach(v =>
+    verdict.append(el("option", {value: v, text: v || "— your verdict —"})));
+  verdict.value = n.verdict || "";
+  const ta = el("textarea", {placeholder: "Notes about this case…", "aria-label": "Notes"}); ta.value = n.text || "";
+  const store = () => { notes[d.id] = {verdict: verdict.value, text: ta.value, item_id: d.item_id, check: d.check,
+    split: d.split, type: d.type, label: d.label, pred: d.pred, updated: new Date().toISOString()};
+    status.textContent = saveNotes() ? "saved in this browser" : "could not save (browser storage blocked) — use Export"; };
+  verdict.addEventListener("change", store); ta.addEventListener("input", store);
+  head.append(el("div", {class: "notes"}, el("h3", {text: "Your notes"}), verdict, " ", status, ta));
+
+  const left = el("div", {class: "panel"}, el("h2", {text: "Screenshot"}), el("img", {class: "shot", src: d.image, alt: "Screenshot of " + d.item_id, loading: "lazy"}));
+  const right = el("div", {class: "panel"});
+  const views = {
+    "Prompt (full)": () => el("pre", {class: "box", text: d.prompt}),
+    "OCR": () => el("pre", {class: "box", text: d.ocr.length ? d.ocr.map(l => `y=${Math.round(l.y)}  [${l.score.toFixed(2)}]  ${l.text}`).join("\n") : "(no OCR text)"}),
+    "HTML fields": () => el("pre", {class: "box", text: Object.entries(d.html_fields).map(([k, v]) =>
+      `[${k}]` + (Array.isArray(v) ? ` (${v.length})\n` + v.map(x => "  - " + x).join("\n") : `\n  ${v}`)).join("\n\n")}),
+    "Raw HTML": () => el("div", {}, el("p", {class: "note", text: `${d.raw_html_bytes.toLocaleString()} bytes, shown as plain text (never rendered).`}), el("pre", {class: "box", text: d.raw_html})),
+  };
+  const vt = el("div", {class: "tabs", role: "tablist"}), body = el("div", {});
+  let current = "Prompt (full)";
+  const show = k => { current = k; vt.querySelectorAll("button").forEach(b => b.setAttribute("aria-selected", String(b.textContent === k))); body.replaceChildren(views[k]()); };
+  Object.keys(views).forEach(k => vt.append(el("button", {class: "tab", role: "tab", text: k, onclick: () => show(k)})));
+  right.append(vt, el("div", {style: "height:8px"}), body); show(current);
+
+  return el("div", {class: "browser"}, head, el("div", {class: "case"}, left, right));
+}
+
+function exportNotes() {
+  const blob = new Blob([JSON.stringify(notes, null, 1)], {type: "application/json"});
+  const a = el("a", {href: URL.createObjectURL(blob), download: "approachB_error_notes.json"}); document.body.append(a); a.click(); a.remove();
+}
+function importNotes(e) {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(t => { try { Object.assign(notes, JSON.parse(t)); saveNotes(); render(); } catch (err) { alert("Not a notes file: " + err.message); } });
+}
+
+const VERDICTS = ["", "Model wrong", "Label wrong", "Borderline / guide unclear", "Data problem (capture/OCR/HTML)", "Unsure"];
+const CHECK_NAME = {2: "Check 2", 3: "Check 3", final: "Final verdict"};
+const TAB_NAME = {fn: "FN", fp: "FP", swap: "3.1 ↔ 3.2 swap"};
+
+function renderSummary() {
+  // counts of your verdicts over every case in this viewer (any split), from the notes saved in this browser
+  const all = S.cases, verdictOf = c => (notes[c.id] && notes[c.id].verdict) || "";
+  const cols = [];
+  for (const m of [2, 3, "final"]) for (const t of ["fn", "fp", "swap"]) {
+    const n = all.filter(c => c.check === m && c.tab === t).length;
+    if (n) cols.push({m, t, label: `${CHECK_NAME[m]} ${TAB_NAME[t]}`});
+  }
+  const tbl = el("table", {class: "vs"});
+  const hr = el("tr", {}, el("th", {text: "Your verdict"}));
+  cols.forEach(c => hr.append(el("th", {text: c.label})));
+  hr.append(el("th", {text: "All cases"})); tbl.append(hr);
+  const rowFor = (name, pred, cls) => {
+    const tr = el("tr", cls ? {class: cls} : {}, el("td", {text: name}));
+    cols.forEach(c => tr.append(el("td", {text: String(all.filter(x => x.check === c.m && x.tab === c.t && pred(x)).length)})));
+    tr.append(el("td", {text: String(all.filter(pred).length)})); tbl.append(tr);
+  };
+  VERDICTS.filter(v => v).forEach(v => rowFor(v, x => verdictOf(x) === v));
+  rowFor("No verdict yet", x => !verdictOf(x));
+  rowFor("Total", () => true, "total");
+
+  const done = all.filter(c => verdictOf(c) || (notes[c.id] && notes[c.id].text));
+  const pct = all.length ? (100 * all.filter(verdictOf).length / all.length).toFixed(0) : 0;
+  const list = el("table", {class: "vs"});
+  list.append(el("tr", {}, ...["Case", "Check", "Error type", "Split", "Page", "Your verdict", "Your note"].map(h => el("th", {text: h}))));
+  for (const c of done) {
+    const open = el("button", {class: "linkbtn", text: c.item_id, onclick: () => {
+      state.model = c.check; state.split = c.split; state.sub = c.tab; state.impact = "all"; state.ptype = "all";
+      state.idx = Math.max(0, cases(c.tab).findIndex(x => x.id === c.id)); render(); }});
+    list.append(el("tr", {}, el("td", {}, open), el("td", {text: CHECK_NAME[c.check]}), el("td", {text: c.type}),
+      el("td", {text: c.split}), el("td", {text: c.page_class}), el("td", {text: verdictOf(c) || "—"}),
+      el("td", {text: (notes[c.id] && notes[c.id].text) || ""})));
+  }
+  const p = el("div", {class: "panel"},
+    el("h2", {text: "Verdict summary"}),
+    el("p", {class: "note", text: `${all.filter(verdictOf).length} of ${all.length} cases have a verdict (${pct}%). Counts come from the notes saved in this browser at this address; use Import notes to load notes saved elsewhere.`}),
+    el("div", {class: "nav"}, el("button", {class: "btn", text: "Export notes", onclick: exportNotes}),
+      el("label", {class: "btn"}, "Import notes", el("input", {type: "file", accept: ".json,application/json", hidden: "", onchange: importNotes}))),
+    el("h3", {text: "How many cases under each verdict"}), el("div", {style: "overflow-x:auto"}, tbl),
+    el("h3", {text: `Cases you have judged or noted (${done.length}) — click a case to open it`}),
+    done.length ? el("div", {style: "overflow-x:auto"}, list) : el("p", {class: "note", text: "No verdicts or notes saved in this browser yet."}));
+  document.getElementById("main").replaceChildren(p);
+}
+
+function render() {
+  document.getElementById("split").value = state.split;
+  renderTabs();
+  if (state.model === "summary") renderSummary();
+  else if (state.sub === "scores") renderScores(); else renderBrowser();
+}
+document.getElementById("split").addEventListener("change", e => { state.split = e.target.value; state.idx = 0; render(); });
+document.getElementById("impact").addEventListener("change", e => { state.impact = e.target.value; state.idx = 0; render(); });
+document.getElementById("ptype").addEventListener("change", e => { state.ptype = e.target.value; state.idx = 0; render(); });
+document.addEventListener("keydown", e => {
+  if (state.model === "summary" || state.sub === "scores" || ["TEXTAREA", "SELECT", "INPUT"].includes(document.activeElement.tagName)) return;
+  const n = cases(state.sub).length; if (!n) return;
+  if (e.key === "ArrowRight") { state.idx = (state.idx + 1) % n; renderBrowser(); }
+  if (e.key === "ArrowLeft") { state.idx = (state.idx - 1 + n) % n; renderBrowser(); }
+});
+// optional deep link: #<model>-<subtab>-<split>[-<case number>], e.g. #3-fp-test or #2-fn-val-2
+(() => { const [m, sub, split, i] = location.hash.slice(1).split("-");
+  if (m === "summary") { state.model = "summary"; return; }
+  if (m === "2" || m === "3") state.model = +m; else if (m === "final") state.model = "final";
+  if (SUBTABS[state.model].some(([k]) => k === sub)) state.sub = sub;
+  if (split === "val" || split === "test") state.split = split;
+  if (i) state.idx = Math.max(0, +i - 1); })();
+render();
+</script>
+</body>
+</html>
