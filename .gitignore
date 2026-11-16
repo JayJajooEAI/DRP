@@ -1,23 +1,36 @@
-# Track only the impersonation code and the model weights. Everything else in DRP stays out for now.
+# Track only the impersonation code and its model weights, plus the shared server. Everything else in DRP stays out for now (web phish included).
 /*
 !/.gitignore
-!/impersonation/
+!/README.md
+!/development/
+!/inference/
 
-# Inside impersonation: no data, no run outputs, no virtualenv, no sample screenshots
-/impersonation/data/*
-!/impersonation/data/README.md
-!/impersonation/data/assets/
-/impersonation/data/assets/*
-!/impersonation/data/assets/README.md
-!/impersonation/data/reference/
-/impersonation/data/reference/*
-!/impersonation/data/reference/README.md
-!/impersonation/data/screenshots/
-/impersonation/data/screenshots/*
-!/impersonation/data/screenshots/README.md
-/impersonation/outputs/
-/impersonation/.venv/
-/impersonation/inference/samples/
+# development: only impersonation, and inside it no data, no run outputs, no virtualenv
+/development/*
+!/development/impersonation/
+/development/impersonation/data/*
+!/development/impersonation/data/README.md
+!/development/impersonation/data/assets/
+/development/impersonation/data/assets/*
+!/development/impersonation/data/assets/README.md
+!/development/impersonation/data/reference/
+/development/impersonation/data/reference/*
+!/development/impersonation/data/reference/README.md
+!/development/impersonation/data/screenshots/
+/development/impersonation/data/screenshots/*
+!/development/impersonation/data/screenshots/README.md
+/development/impersonation/outputs/
+/development/impersonation/.venv/
+
+# inference: the shared server files and the impersonation folder (not its sample screenshots)
+/inference/*
+!/inference/app.py
+!/inference/README.md
+!/inference/requirements.txt
+!/inference/smoke_test.py
+!/inference/.env.example
+!/inference/impersonation/
+/inference/impersonation/samples/
 
 __pycache__/
 *.pyc

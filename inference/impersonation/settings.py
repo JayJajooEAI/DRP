@@ -1,10 +1,10 @@
-"""Paths and switches. Everything is relative to the inference folder, and can be overridden with environment variables."""
+"""Paths and switches. Everything is relative to this incident type's folder, and can be overridden with environment variables."""
 
 import os
 from pathlib import Path
 
 # Settings can also come from a git-ignored file `inference/.env` (lines like KEY=value). Variables already set in the environment win.
-_env = Path(__file__).resolve().parents[1] / ".env"
+_env = Path(__file__).resolve().parents[1] / ".env"   # inference/.env, shared by both incident types
 if _env.exists():
     for _line in _env.read_text().splitlines():
         _line = _line.strip()
@@ -12,8 +12,8 @@ if _env.exists():
             _k, _v = _line.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip().strip('"'))
 
-# ROOT = the inference folder (this file is inference/pipeline/settings.py)
-ROOT = Path(__file__).resolve().parents[1]
+# ROOT = this incident type's folder (inference/impersonation/); its model/ folder is here
+ROOT = Path(__file__).resolve().parent
 
 # MODEL_FILE = the frozen LightGBM model + thresholds (the only thing stored locally; everything about the clients comes from RDS)
 MODEL_FILE = Path(os.environ.get("MODEL_FILE", ROOT / "model" / "frozen.joblib"))
@@ -46,5 +46,3 @@ RDS = dict(
 )
 RDS_SCHEMA = os.environ.get("RDS_SCHEMA", "drp_clients")
 
-# A client's data is cached in memory this long (seconds) before it is fetched from RDS again
-CLIENT_CACHE_TTL_S = float(os.environ.get("CLIENT_CACHE_TTL_S", "300"))

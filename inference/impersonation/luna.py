@@ -9,7 +9,7 @@ import os
 
 from PIL import Image
 
-from pipeline.settings import LUNA_ENABLED, LUNA_MODEL, LUNA_TIMEOUT_S
+from impersonation.settings import LUNA_ENABLED, LUNA_MODEL, LUNA_TIMEOUT_S
 
 # The written definition Luna judges by (identical to the one used when the pipeline was frozen and tested)
 INSTRUCTIONS = """You are a brand-protection analyst. Decide whether a social-media profile is an IMPERSONATION of the client.

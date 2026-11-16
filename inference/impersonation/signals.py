@@ -5,7 +5,7 @@ import re, json, numpy as np, cv2
 # rapidfuzz.fuzz = fuzzy text similarity (0..100)
 from rapidfuzz import fuzz
 from PIL import Image
-from pipeline.layout_parser import parse
+from impersonation.layout_parser import parse
 
 # Accent colour of each platform (its verified-badge colour); used to find the badge
 ACC = {

@@ -1,22 +1,16 @@
-# Impersonation detector: inference API
+# inference/impersonation: the impersonation detector
 
 One profile screenshot in, one verdict out (`impersonation` / `not_impersonation`).
-This folder is **self-contained**: it imports nothing from outside itself. It holds the code, the frozen model, and the client profiles.
+It is served by the shared server in `../app.py` (see `../README.md`); this folder holds the code and the frozen model, and imports nothing from outside `inference/`.
 
 ## Run
 
-```bash
-pip install -r requirements.txt
-cp .env.example .env      # then fill in the values (the real .env is git-ignored)
-uvicorn app:app --host 0.0.0.0 --port 8000
-```
-
-Settings are read from the environment or from `inference/.env` (variables already set in the environment win): `RDS_HOST`, `RDS_USER`, `RDS_PASSWORD` (where the client data lives, see "Where the data comes from") and, optionally, `OPENAI_API_KEY` for the Luna step.
+Start the shared server from `inference/` (see `../README.md`). Settings come from the environment or from `inference/.env` (variables already set in the environment win): `RDS_HOST`, `RDS_USER`, `RDS_PASSWORD` and, optionally, `OPENAI_API_KEY` for the Luna step.
 
 Startup loads OCR, CLIP and the model once (a few seconds, about 2 GB of RAM or GPU memory). A GPU is used when available (`DEVICE=cpu` forces CPU).
 
 ## Where the data comes from
-A request carries only **the screenshot and a client id**. Only the frozen model is stored here (`model/frozen.joblib`). Everything about the client is fetched from RDS (schema `drp_clients`) and cached in memory for 5 minutes, so a change in the database is picked up without a restart:
+A request carries only **the screenshot and a client id**. Only the frozen model is stored here (`model/frozen.joblib`). Everything about the client is fetched from RDS (schema `drp_clients`), on every request, so a change in the database applies to the next call without a restart:
 
 | Needed | RDS table |
 |---|---|
@@ -26,19 +20,19 @@ A request carries only **the screenshot and a client id**. Only the frozen model
 | the logo and the executive photos | `assets` |
 | their precomputed CLIP vectors | `impersonation_embeddings` |
 
-The client id is the RDS `customer_id` (for example `paypal`, `1_1_ionos`). `GET /clients` lists the valid ones.
+The client id is the RDS `customer_id` (for example `paypal`, `1_1_ionos`). `GET /impersonation/clients` lists the valid ones.
 
 ## Endpoints
 
 | Method | Path | What it does |
 |---|---|---|
-| GET | `/health` | status, device, thresholds, whether Luna is available |
-| GET | `/clients` | the protected clients you can check against |
-| POST | `/predict` | multipart form: `file` = screenshot, `client` = a client id from `/clients`, `use_luna` = true/false (default true) |
+| GET | `/health` (shared) | status of both incident types; for this one: device, thresholds, whether Luna is available |
+| GET | `/impersonation/clients` | the protected clients you can check against |
+| POST | `/impersonation/predict` | multipart form: `file` = screenshot, `client` = a client id from `/clients`, `use_luna` = true/false (default true) |
 
 ```bash
-curl -F file=@samples/imp_p1_apple_0.png -F client=apple http://localhost:8000/predict
-python smoke_test.py            # sends every screenshot in samples/
+curl -F file=@impersonation/samples/imp_p1_apple_0.png -F client=apple http://localhost:8000/impersonation/predict
+python smoke_test.py            # run from inference/: sends the samples to both incident types
 ```
 
 Example answer (shortened):
@@ -70,24 +64,38 @@ Errors: `400` not an image, `404` unknown client, `413` file too large, `503` RD
 | `MAX_UPLOAD_MB` | `10` | upload limit |
 | `RDS_HOST`, `RDS_USER`, `RDS_PASSWORD` | none | required: where the client data lives |
 | `RDS_PORT`, `RDS_DBNAME`, `RDS_SSLMODE`, `RDS_SCHEMA` | `5432`, `customerdata`, `require`, `drp_clients` | connection details |
-| `CLIENT_CACHE_TTL_S` | `300` | how long a client's data is cached |
 | `MODEL_FILE` | inside this folder | override the model location |
 
 ## Folder
 
 ```
-app.py                 the HTTP API (FastAPI)
-pipeline/              ocr.py, layout_parser.py, avatar.py, signals.py, rules.py, features.py, luna.py, engine.py (runs the steps), clients.py (reads RDS), settings.py
-model/frozen.joblib    the frozen LightGBM model + the rule and model thresholds
-samples/               a few test screenshots + samples.json (used by smoke_test.py)
-smoke_test.py          quick check of a running server
+engine.py, ocr.py, layout_parser.py, avatar.py, signals.py, rules.py, features.py, luna.py   the steps (below)
+clients.py   reads the clients from RDS
+settings.py  paths and switches
+model/       frozen.joblib: the frozen LightGBM model + the rule and model thresholds
+samples/     a few test screenshots + samples.json (used by ../smoke_test.py; not in git)
 ```
 
+### The steps
+
+| File | Step |
+|---|---|
+| `ocr.py` | Reads the text on the screenshot (docTR) |
+| `layout_parser.py` | Turns the text lines into fields: platform, name, handle, bio, link, stats, posts |
+| `avatar.py` | Crops the profile picture and compares it with the client's logo and executive photos (CLIP vectors from RDS, plus a pixel check) |
+| `signals.py` | About 100 numbers from the fields, the avatar scores and the client profile |
+| `rules.py` | Hand-written points, scaled to 0 to 1; decides when the score is clear |
+| `features.py` | Builds the feature table the frozen LightGBM model expects |
+| `luna.py` | Asks Luna (OpenAI Decisions API) about pages the rules and the model leave unsure |
+| `clients.py` | Fetches the client's profile, logo, executive photos and stored vectors from RDS |
+| `settings.py` | Paths and switches; reads the environment and `inference/.env` |
+| `engine.py` | Loads the models once, then runs the steps and builds the answer |
+
 ## Adding a client
-Add the client to the RDS tables above (`customers`, a `pipeline_metadata` row for `impersonation`, a main domain, executives, the logo and photos in `assets`, and their vectors in `impersonation_embeddings`). No restart is needed after the cache expires.
+Add the client to the RDS tables above (`customers`, a `pipeline_metadata` row for `impersonation`, a main domain, executives, the logo and photos in `assets`, and their vectors in `impersonation_embeddings`). No restart is needed.
 
 ## Things to know
 - **Input format.** The layout parser is calibrated to 900 x 900 px screenshots of X, Facebook, Instagram, LinkedIn, Telegram and TikTok profile pages as rendered in the benchmark. Other sizes are resized to 900 x 900 (reported as `image_resized_to_900`); real screenshots may need the parser's positions re-tuned.
 - **Data.** The model was trained and tested on a synthetic benchmark (templated wording, AI-generated executive faces, fictional executives). Check it on real screenshots before relying on it.
 - **Speed.** About 0.3 s per page on a GPU without Luna; about 4 s on CPU only. Luna adds roughly 0.2 to 1.3 s on the few unsure pages. Requests are served one at a time per process (the models are shared); run several processes for more throughput.
-- **Frozen.** `model/frozen.joblib` is the model frozen after training on train and checked on test. To retrain, use the batch pipeline in `../code` and copy the new `frozen.joblib` here.
+- **Frozen.** `model/frozen.joblib` is the model frozen after training on train and checked on test. To retrain, use the batch pipeline in `../../development/impersonation/code` and copy the new `frozen.joblib` here.

@@ -8,9 +8,10 @@ The benchmark is synthetic: 25 real brands, 4,470 profile screenshots across six
 | Folder | What it is |
 |---|---|
 | `code/` | The batch pipeline: numbered scripts 01 to 10 that build, freeze and test the detector, plus `utilities/` |
-| `inference/` | The HTTP API: one screenshot and a client id in, a verdict out. Client data is read from RDS; only the frozen model is local |
 | `data/` | The benchmark data: screenshots, train/val/test lists, client assets (not in git, copies are in S3) |
 | `outputs/` | Everything the scripts write: intermediate results, the frozen model, reports (created on first run, not in git) |
+
+The HTTP API for this detector is not here: it is in `../../inference/impersonation/` (served together with the web-phish detector).
 
 ## How it decides (a cascade)
 
@@ -36,7 +37,7 @@ Read the 100% with care: the data is generated (templated wording, AI-generated 
 
 - **Local:** `data/` and `outputs/` (large, not in git).
 - **S3** (`drp-pipeline/impersonation/`): the 4,470 screenshots and the metadata (`train.csv`, `val.csv`, `test.csv`, `classes.json`).
-- **RDS** (schema `drp_clients`): the client profiles, logos, executive photos and their stored CLIP vectors, and the `content` table that gives every screenshot a number, its client and its split. The inference service reads clients from here.
+- **RDS** (schema `drp_clients`): the client profiles, logos, executive photos and their stored CLIP vectors, and the `content` table that gives every screenshot a number, its client and its split. The inference service (`../../inference/impersonation/`) reads clients from here.
 
 ## Quick start
 
@@ -44,10 +45,6 @@ Read the 100% with care: the data is generated (templated wording, AI-generated 
 cd code
 python 01_ocr_read_screenshots.py train val test      # then 02, 04, 05, 06 ... see code/README.md
 ```
-```bash
-cd inference
-cp .env.example .env     # fill in RDS_HOST, RDS_USER, RDS_PASSWORD (and optionally OPENAI_API_KEY)
-uvicorn app:app --port 8000
-```
+The API is started from the shared `inference/` folder (see `../../inference/README.md`).
 
 Each folder has its own README.

@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from pipeline.rules import rule_scores, to01
+from impersonation.rules import rule_scores, to01
 
 # Columns that identify the page but are not features
 META = ["id", "customer", "platform", "layout"]

@@ -6,8 +6,8 @@ import torch
 from PIL import Image, ImageDraw
 from transformers import CLIPModel, CLIPProcessor
 
-from pipeline.layout_parser import LAYOUT
-from pipeline.settings import DEVICE
+from impersonation.layout_parser import LAYOUT
+from impersonation.settings import DEVICE
 
 # Where the avatar circle sits (left, top, right, bottom in pixels) for each layout type
 BOX = {"feed": (80, 172, 192, 284), "grid": (80, 88, 206, 214), "pro": (80, 164, 208, 292)}

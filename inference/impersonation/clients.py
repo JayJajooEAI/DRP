@@ -6,17 +6,15 @@ For one client id the service reads
     executives                      protected executives: name and title
     impersonation_embeddings        the stored CLIP vectors of the logo (2 sizes) and of each executive photo
     assets                          the logo image and the executive photos (needed for the pixel-correlation check and for Luna)
-A client is cached in memory for CLIENT_CACHE_TTL_S seconds, so a change in RDS is picked up without restarting."""
+Nothing is cached: every request reads the client from RDS, so a change in the database applies to the next request."""
 
 import io
-import threading
-import time
 
 import numpy as np
 import psycopg
 from PIL import Image
 
-from pipeline.settings import CLIENT_CACHE_TTL_S, RDS, RDS_SCHEMA
+from impersonation.settings import RDS, RDS_SCHEMA
 
 
 class RdsUnavailable(RuntimeError):
@@ -35,8 +33,6 @@ class RdsClients:
         missing = [k for k in ("host", "user", "password") if not RDS[k]]
         if missing:
             raise RdsUnavailable("set the environment variables " + ", ".join("RDS_" + k.upper() for k in missing))
-        self._cache = {}
-        self._lock = threading.Lock()
 
     def _connect(self):
         try:
@@ -57,15 +53,7 @@ class RdsClients:
 
     def get(self, client_id):
         """The full profile of one client, or None if it is not an impersonation client."""
-        with self._lock:
-            hit = self._cache.get(client_id)
-            if hit and time.time() - hit[0] < CLIENT_CACHE_TTL_S:
-                return hit[1]
-        client = self._fetch(client_id)
-        if client is not None:
-            with self._lock:
-                self._cache[client_id] = (time.time(), client)
-        return client
+        return self._fetch(client_id)
 
     def _fetch(self, cid):
         with self._connect() as con:

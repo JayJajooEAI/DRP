@@ -3,7 +3,7 @@
 import torch
 from doctr.models import ocr_predictor
 
-from pipeline.settings import DEVICE, SHOT_SIZE
+from impersonation.settings import DEVICE, SHOT_SIZE
 
 
 class OCR:

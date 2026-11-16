@@ -9,15 +9,15 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from pipeline.avatar import AvatarMatcher
-from pipeline.clients import RdsClients, RdsUnavailable
-from pipeline.features import feats
-from pipeline.layout_parser import parse
-from pipeline.luna import Luna
-from pipeline.ocr import OCR
-from pipeline.rules import decide, rule_score
-from pipeline.settings import MODEL_FILE, SHOT_SIZE
-from pipeline.signals import signals
+from impersonation.avatar import AvatarMatcher
+from impersonation.clients import RdsClients, RdsUnavailable
+from impersonation.features import feats
+from impersonation.layout_parser import parse
+from impersonation.luna import Luna
+from impersonation.ocr import OCR
+from impersonation.rules import decide, rule_score
+from impersonation.settings import MODEL_FILE, SHOT_SIZE
+from impersonation.signals import signals
 
 
 class BadImage(ValueError):
@@ -30,7 +30,7 @@ class UnknownClient(KeyError):
 
 class Engine:
     def __init__(self):
-        # Loaded once at startup: the frozen model + thresholds (local), OCR, CLIP, Luna client. Client data is fetched from RDS per request (cached).
+        # Loaded once at startup: the frozen model + thresholds (local), OCR, CLIP, Luna client. Client data is fetched from RDS per request (no cache).
         self.clients = RdsClients()
         F = joblib.load(MODEL_FILE)
         self.model, self.art = F["model"], F["art"]
