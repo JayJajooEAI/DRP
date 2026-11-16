@@ -1,0 +1,71 @@
+{
+ "type": "json_schema",
+ "json_schema": {
+  "name": "threat_label",
+  "strict": true,
+  "schema": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "label",
+    "subtype",
+    "confidence",
+    "reason"
+   ],
+   "properties": {
+    "label": {
+     "type": "integer",
+     "enum": [
+      0,
+      1
+     ]
+    },
+    "subtype": {
+     "type": "string",
+     "enum": [
+      "structure fires",
+      "gun violence",
+      "severe weather & natural disasters",
+      "protest - organized",
+      "explosions",
+      "police activity",
+      "knife attacks",
+      "gas leaks",
+      "shots fired",
+      "officer involved shootings",
+      "bomb threats",
+      "investigations",
+      "suspicious packages",
+      "natural disaster",
+      "accidents",
+      "unspecified violence",
+      "technological disaster",
+      "robbery",
+      "active shooter",
+      "travel warnings",
+      "vandalism",
+      "wildfire",
+      "hostage situation",
+      "tornado",
+      "amber alert",
+      "earthquake",
+      "protest - weapons",
+      "flood",
+      "missing person",
+      "event",
+      "tropical storm hazard",
+      "severe thunderstorm hazard",
+      "other",
+      "none"
+     ]
+    },
+    "confidence": {
+     "type": "number"
+    },
+    "reason": {
+     "type": "string"
+    }
+   }
+  }
+ }
+}

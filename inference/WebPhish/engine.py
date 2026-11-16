@@ -90,19 +90,19 @@ class Engine:
         X = url_features.feature_frame([url], m["tld_risk"], m["vocab"])
         return float(m["model"].predict_proba(X[m["feature_columns"]])[:, 1][0]), False
 
-    def predict(self, client_id: str, url: str = None, content_id: int = None) -> dict:
+    def predict(self, client_id: str, url: str) -> dict:
         """Check one link. A link can be stored more than once (several captures): every capture is run, and the answer lists them all."""
-        if url is None and content_id is None:
-            raise BadInput("give a url or a content_id")
+        if not url:
+            raise BadInput("give a url")
         client = self.clients.get(client_id)
         if client is None:
             raise UnknownClient(client_id)
-        caps = self.clients.captures(client_id, url=url, content_id=content_id)
+        caps = self.clients.captures(client_id, url)
         if not caps:
-            raise NoCapture(url if url is not None else content_id)
+            raise NoCapture(url)
         aliases, owned = self.clients.brand_context()
         results = [self._run(client, cap, aliases, owned) for cap in caps]
-        return dict(client=client_id, link=url if url is not None else caps[0]["url"], records=len(results),
+        return dict(client=client_id, link=url, records=len(results),
                     web_phish_records=sum(r["prediction"] == "web_phish" for r in results), results=results)
 
     def _run(self, client: dict, cap: dict, aliases, owned) -> dict:

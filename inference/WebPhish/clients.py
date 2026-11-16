@@ -88,19 +88,15 @@ class RdsClients:
                    WHERE d.domain_type = 'allowlist'""")]
         return aliases, owned
 
-    def captures(self, client_id, url=None, content_id=None):
-        """The stored pages of a link: every capture of that link for this client (ordered by content_id), or the one capture
-        named by content_id. Each is dict(content_id, url, final_url, html, screenshot). Empty list when there is none."""
+    def captures(self, client_id, url):
+        """The stored pages of a link: every capture of that link for this client (ordered by content_id). Each is
+        dict(content_id, url, final_url, html, screenshot). Empty list when there is none."""
         with self._connect() as con:
-            if content_id is not None:
-                where, args = "p.content_id = %s", (content_id,)
-            else:
-                where, args = "p.url = %s", (url,)
             rows = con.execute(
-                f"""SELECT p.content_id, p.url, p.final_url, p.html, p.screenshot
-                    FROM page_captures p JOIN content c ON c.content_id = p.content_id
-                    WHERE c.customer_id = %s AND c.pipeline = 'webp' AND {where} ORDER BY p.content_id""",
-                (client_id, *args),
+                """SELECT p.content_id, p.url, p.final_url, p.html, p.screenshot
+                   FROM page_captures p JOIN content c ON c.content_id = p.content_id
+                   WHERE c.customer_id = %s AND c.pipeline = 'webp' AND p.url = %s ORDER BY p.content_id""",
+                (client_id, url),
             ).fetchall()
         return [dict(content_id=cid, url=u, final_url=fu or u, html=bytes(html or b""), screenshot=bytes(shot or b""))
                 for cid, u, fu, html, shot in rows]

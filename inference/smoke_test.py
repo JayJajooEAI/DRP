@@ -1,4 +1,4 @@
-"""Smoke test for a running server: checks /health, then sends each sample to both incident types.
+"""Smoke test for a running server: checks /health, then sends each sample to every incident type that is loaded.
 Usage: python smoke_test.py [http://localhost:8000]      (uses only the standard library)"""
 
 import json
@@ -48,3 +48,10 @@ if health["incident_types"].get("WebPhish", {}).get("loaded"):
             ok = "OK " if x["prediction"] == s["truth"] else "BAD"
             print("    ", ok, "content_id", x["capture"]["content_id"], "->", x["prediction"], "| case",
                   x["checks"]["data_capture"]["case"], "|", x["timings_ms"]["total"], "ms")
+
+if health["incident_types"].get("PhysicalThreatFacility", {}).get("loaded"):
+    print("\nphysicalthreat")
+    for s in json.load(open(HERE / "PhysicalThreatFacility" / "samples" / "samples.json")):
+        r = post_json("/physicalthreat/predict", {"text": s["text"]})
+        ok = "OK " if r["prediction"] == s["truth"] else "BAD"
+        print(" ", ok, s["expected_rung"], "->", r["prediction"], "| decided by", r["decided_by"], "| p_threat", r["p_threat"], "|", r["timings_ms"]["total"], "ms")

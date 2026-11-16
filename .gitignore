@@ -1,5 +1,5 @@
 # Track the code, READMEs and small model files of both incident types and the shared server.
-# Left out: every data/ and outputs/ folder, virtualenvs, secrets, sample screenshots, and the four WebPhish weight files over GitHub's 100 MB limit.
+# Left out: every data/ and outputs/ folder, virtualenvs, secrets, sample screenshots, and the weight files over GitHub's 100 MB limit.
 /*
 !/.gitignore
 !/README.md
@@ -13,6 +13,9 @@
 /development/WebPhish/data/
 /development/WebPhish/outputs/
 /development/WebPhish/.venv/
+!/development/PhysicalThreatFacility/
+/development/PhysicalThreatFacility/data/
+/development/PhysicalThreatFacility/outputs/
 /development/impersonation/data/*
 !/development/impersonation/data/README.md
 !/development/impersonation/data/assets/
@@ -37,12 +40,17 @@
 !/inference/impersonation/
 /inference/impersonation/samples/
 !/inference/WebPhish/
+!/inference/PhysicalThreatFacility/
 
 # WebPhish weight files over 100 MB (the language models and the Phishpedia logo models); copy them in by hand
 /inference/WebPhish/model/check2/model/model.safetensors
 /inference/WebPhish/model/check3/model/model.safetensors
 /inference/WebPhish/model/phishpedia/*.pth
 /inference/WebPhish/model/phishpedia/*.pth.tar
+
+# Physical-threat weight files (over 100 MB)
+/inference/PhysicalThreatFacility/model/rung1_location/model.safetensors
+/inference/PhysicalThreatFacility/model/rung2_distilbert/model.safetensors
 
 __pycache__/
 *.pyc

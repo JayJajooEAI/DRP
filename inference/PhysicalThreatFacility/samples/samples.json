@@ -1,0 +1,26 @@
+[
+ {
+  "text": "Acme Corp fined $27M by regulators for deceptive advertising.",
+  "truth": "not_threat",
+  "expected_rung": "rung1",
+  "note": "no place named: stops at rung 1"
+ },
+ {
+  "text": "Brockton firefighters battle 2-alarm house fire at 1236 Pleasant Street on Thursday, March 20, 2025. https://t.co/JzT8moUYpf",
+  "truth": "threat",
+  "expected_rung": "rung2",
+  "note": "clear threat with a place: rung 2"
+ },
+ {
+  "text": "[NAME] found the perfect position to not have to defend [NAME] or [NAME]. Amazing instinct to be honest",
+  "truth": "not_threat",
+  "expected_rung": "rung2",
+  "note": "names a place but is not a threat: rung 2"
+ },
+ {
+  "text": "Birleşik Devletler posta servisi ' ni dikkate alın .",
+  "truth": "not_threat",
+  "expected_rung": "rung3",
+  "note": "unsure band: needs the LLM (about $0.0003)"
+ }
+]

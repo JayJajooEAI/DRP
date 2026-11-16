@@ -17,8 +17,7 @@ curl -X POST localhost:8000/webphish/predict -H 'Content-Type: application/json'
      -d '{"client": "paypal", "url": "http://infosantioana.hi2.ro/php/update/"}'
 python smoke_test.py            # run from inference/: sends the samples to both incident types
 ```
-`POST /webphish/predict` takes `client` (an id from `/clients`) and either `url` or `content_id` (one exact stored capture). Errors: 400 no url or
-content_id, 404 unknown client or no stored page for the link, 503 RDS unavailable.
+`POST /webphish/predict` takes `client` (an id from `/webphish/clients`) and `url` (the link). Errors: 404 unknown client or no stored page for the link, 422 missing field, 503 RDS unavailable.
 
 A link can be stored more than once (207 links have 2 to 7 captures, and the pages differ). With `url`, **every** stored capture is
 checked, and the answer says how many records there were and gives a result for each:
@@ -27,7 +26,7 @@ checked, and the answer says how many records there were and gives a result for 
  "results": [ {"capture": {"content_id": 30987, "url": "..."}, "prediction": "not_web_phish", "checks": {...}, "signals": {...}, ...},
               {"capture": {"content_id": 31698, ...}, ...}, {"capture": {"content_id": 32128, ...}, ...} ]}
 ```
-A link with one capture returns `records: 1` and one result. With `content_id`, only that capture is checked.
+A link with one capture returns `records: 1` and one result.
 
 ## What happens to one request
 
