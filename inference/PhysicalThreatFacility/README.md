@@ -1,64 +1,97 @@
 # inference/PhysicalThreatFacility: the physical-threat detector
 
-A message in (a post, alert or article), a verdict out: is it a **physical threat**, a danger or disruption to people or places tied to a real location?
-No client is involved. It is served by the shared server in `../app.py` (see `../README.md`); this folder holds the code and its own models (`model/`),
-and imports nothing from outside `inference/`.
+A message in (a post, alert or article), a verdict out: is it a **physical threat**, a danger or disruption to people or places tied to a real location? No client is needed.
+Served by the shared server `../app.py` (see `../README.md`). This folder holds the code and its models (`model/`) and imports nothing from outside `inference/`.
 
 ## Use it
+
+| Method | Path | Input |
+|---|---|---|
+| POST | `/physicalthreat/predict` | JSON: `text` (required), `use_luna` (optional, default true) |
 
 ```bash
 curl -X POST localhost:8000/physicalthreat/predict -H 'Content-Type: application/json' \
      -d '{"text": "Shots fired near 5th Ave and Pine St, Seattle"}'
-python ../smoke_test.py            # run from inference/: sends the samples to every incident type
 ```
-Body: `text` (required), `use_luna` (default true). Errors: 400 empty or too long text, 422 missing field.
 
 ```json
 {"prediction": "threat", "decided_by": "rung2",
  "location": {"found": true, "places": ["5th Ave", "Pine St", "Seattle"], "by": "model"},
  "p_threat": 0.9999, "luna": null, "luna_skipped": null, "timings_ms": {"total": 316}}
 ```
-`decided_by` is `rung1` (no place named, so not a threat), `rung2` (the DistilBERT score was clear), `rung3` (GPT-6 Luna answered the unsure ones), or
-`rung2_fallback` (unsure, but Luna was off or unavailable, so the score at or above 0.5 decides).
 
-## The ladder
+`decided_by`: `rung1` (no place named), `rung2` (DistilBERT score was clear), `rung3` (Luna answered the unsure ones), `rung2_fallback` (unsure and Luna unavailable: score >= 0.5 decides).
+Errors: 400 empty or too long text, 422 missing field.
 
-| Rung | File | What it does |
-|---|---|---|
-| 1 | `location.py` | Does the message name a location? A fine-tuned MiniLMv2 word tagger; if it finds nothing, place rules (street shapes, "X County", ", TX", Japanese and Chinese place suffixes, a gazetteer of countries, states and big cities). No place means not a threat |
-| 2 | `threat.py` | DistilBERT P(threat): at least 0.6 is a threat, below 0.3 is not a threat, in between is unsure |
-| 3 | `luna.py` | GPT-6 Luna (prompt v14, strict JSON answer) decides the unsure band. Needs `OPENAI_API_KEY` in `inference/.env`; without it the server still works |
-| – | `engine.py`, `settings.py` | Runs the rungs for one message; paths and switches |
+## Pipeline
 
-Results on the benchmark's test set (2,850 messages), from the development run: 891 messages stop at rung 1, 1,956 are decided by rung 2, 3 go to Luna;
-precision about 99.5%, recall about 99.7%. See `../../development/PhysicalThreatFacility/README.md`.
-
-## The pipeline, with counts
-
-Counts are from the benchmark's **test split**: 2,850 messages (1,472 threats, 1,378 not).
+Counts are the benchmark test split: 2,850 messages (1,472 threats, 1,378 not).
 
 ```mermaid
 flowchart TD
-    A["Message<br/>2,850"] --> B{"Rung 1: names a location?<br/>P(place) >= 0.4, then place rules"}
-    B -->|"no location: 891 stop<br/>886 not threats, 5 threats"| N["Not a threat"]
+    A["Message<br/>2,850"] --> B{"Rung 1: names a location?<br/>P(place) >= 0.4, else place rules"}
+    B -->|"891 stop: no location<br/>886 not threats, 5 threats lost"| N["Not a threat"]
     B -->|"1,959 go on"| C{"Rung 2: DistilBERT P(threat)"}
-    C -->|">= 0.6: 1,474 threat"| Y["Threat"]
-    C -->|"< 0.3: 482 not a threat"| N
+    C -->|">= 0.6: 1,474"| Y["Threat<br/>1,467 right, 7 false alarms"]
+    C -->|"< 0.3: 482"| N2["Not a threat<br/>482 right"]
     C -->|"0.3 to 0.6: 3 go on"| D["Rung 3: GPT-6 Luna"]
-    D -->|"3 decided: not a threat"| N
+    D -->|"3 decided"| N3["Not a threat<br/>3 right"]
 ```
 
-Final confusion matrix on the test split:
+| Rung | File | Decides when |
+|---|---|---|
+| 1 | `location.py` | no location found: not a threat (P(place) < 0.4 and no place rule matches) |
+| 2 | `threat.py` | P(threat) >= 0.6 threat, < 0.3 not a threat |
+| 3 | `luna.py` | the 0.3 to 0.6 band (needs `OPENAI_API_KEY` in `inference/.env`) |
+
+Test confusion matrix:
 
 | | Predicted threat | Predicted not |
 |---|---:|---:|
 | **Actually a threat** | 1,467 (TP) | 5 (FN) |
 | **Actually not** | 7 (FP) | 1,371 (TN) |
 
-Precision 99.53%, recall 99.66%. The 5 misses are all at rung 1 (the place is only a hashtag or code); the 7 false alarms are all rung 2. Only 3 of 2,850 messages reach the LLM, so it costs about $0.002 for the whole set against $0.847 if every message went to Luna. The full walk-through is in `../../development/PhysicalThreatFacility/README.md`.
+Precision 99.53%, recall 99.66%, F1 99.59%. Train and val are not run through the ladder; see `../../development/PhysicalThreatFacility/README.md`.
 
-## Notes
-- The models were checked against the development pipeline on all 2,850 test messages: same location decision and same rung on all of them, and the same answer on all
-  2,847 messages that rungs 1 and 2 decided. P(threat) differs by at most 0.0013 (fp16 rounding), and three extracted place names differ by a word or two.
-- Luna is an LLM: on the one borderline test message (`ptf_16719`) its answer changed between runs, so a rung 3 answer is not guaranteed to repeat.
-- The weights are not in git; see `model/README.md`.
+## What each model receives
+
+| Rung | Model | Input | Output |
+|---|---|---|---|
+| 1 | MiniLMv2 word tagger | the message with links and @handles removed and hashtags split into words (`#ChicagoScanner` becomes "Chicago Scanner"); first 3,000 characters in pieces of up to 1,000 | for each word, the probability it is part of a place; a message has a location if any word reaches 0.4 |
+| 2 | DistilBERT multilingual | the raw message, up to 128 tokens | P(threat) |
+| 3 | GPT-6 Luna | the prompt below | JSON: `label`, `subtype`, `confidence`, `reason` |
+
+### Rung 3 prompt (GPT-6 Luna, v14)
+
+The system prompt (about 9,500 characters) is fixed. Its core, in short:
+
+```
+You are a security analyst triaging content for a physical-threat monitoring service.
+THE RULE: a physical threat = a THREAT + an ANCHOR. The anchor is a pinned-down location OR a named event
+that identifies its place. A named person, company, organisation or government on its own is NOT an anchor.
+Both parts are needed. Otherwise label 0.
+  1. THREAT: violence and crime, terrorism, war, protests and rallies, explosions and bomb threats,
+     fires, spills, outages, accidents, severe weather and disasters, public-safety problems ...
+  2. ANCHOR: a street, city, state, country or named venue; or a named event that identifies its place.
+  Not a threat: fiction, jokes and slang, software outages with no physical effect ...
+SUBTYPE: if label is 0 the subtype is "none"; if 1, exactly one of 33 subtypes
+  ("structure fires", "gun violence", "protest - organized", "explosions", "police activity", ... "other").
+Reply with JSON only.
+```
+
+The user message is the text itself, cut to 4,000 characters:
+
+```
+TEXT:
+Birleşik Devletler posta servisi ' ni dikkate alın .
+```
+
+The answer is forced into this JSON shape (`response_schema.json`), temperature 0:
+
+```json
+{"label": 0 or 1, "subtype": "<one of the 33, or none>", "confidence": <number>, "reason": "<short text>"}
+```
+
+## Setup
+
+No database is used. Model weights are not in git; see `model/README.md` for sizes, checksums and links.

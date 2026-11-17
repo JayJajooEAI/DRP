@@ -1,131 +1,137 @@
 # inference/impersonation: the impersonation detector
 
-One profile screenshot in, one verdict out (`impersonation` / `not_impersonation`).
-It is served by the shared server in `../app.py` (see `../README.md`); this folder holds the code and the frozen model, and imports nothing from outside `inference/`.
+One profile screenshot and a client id in, one verdict out (`impersonation` / `not_impersonation`).
+Served by the shared server `../app.py` (see `../README.md`). This folder holds the code and the frozen model (`model/frozen.joblib`) and imports nothing from outside `inference/`.
 
-## Run
+## Use it
 
-Start the shared server from `inference/` (see `../README.md`). Settings come from the environment or from `inference/.env` (variables already set in the environment win): `RDS_HOST`, `RDS_USER`, `RDS_PASSWORD` and, optionally, `OPENAI_API_KEY` for the Luna step.
-
-Startup loads OCR, CLIP and the model once (a few seconds, about 2 GB of RAM or GPU memory). A GPU is used when available (`DEVICE=cpu` forces CPU).
-
-## Where the data comes from
-A request carries only **the screenshot and a client id**. Only the frozen model is stored here (`model/frozen.joblib`). Everything about the client is fetched from RDS (schema `drp_clients`), on every request, so a change in the database applies to the next call without a restart:
-
-| Needed | RDS table |
-|---|---|
-| the client exists and is used by the impersonation pipeline | `customers`, `pipeline_metadata` |
-| brand name, official domain | `customers`, `customer_domains` (type `main`) |
-| protected executives (name, title) | `executives` |
-| the logo and the executive photos | `assets` |
-| their precomputed CLIP vectors | `impersonation_embeddings` |
-
-The client id is the RDS `customer_id` (for example `paypal`, `1_1_ionos`). `GET /impersonation/clients` lists the valid ones.
-
-## The pipeline, with counts
-
-Counts are from the benchmark's **test split** (714 profiles from 4 clients the model never saw: 288 impersonations, 426 not). Each stage answers what it is sure about and sends the rest on.
-
-```mermaid
-flowchart TD
-    A["Screenshot + client id<br/>714 profiles"] --> B["1. Read: OCR, layout parser, logo/photo match<br/>about 100 numbers per profile<br/>no filtering, all 714 go on"]
-    B --> C{"2. Rules<br/>score 0 to 1"}
-    C -->|"98 decided (14%)<br/>63 impersonation, 35 not"| Z["Verdict"]
-    C -->|"616 sent on"| D{"3. LightGBM<br/>probability"}
-    D -->|"605 decided (85%)<br/>223 impersonation, 382 not"| Z
-    D -->|"11 unsure, sent on"| E["4. Luna (LLM)"]
-    E -->|"11 decided (2%)<br/>2 impersonation, 9 not"| Z
-```
-
-| Stage | Decides when | Pages decided | Of them wrong |
-|---|---|---:|---:|
-| 2. Rules | score at or above 0.709 (impersonation) or at or below 0.43 (not) | 98 | 0 |
-| 3. LightGBM | probability at or above 0.98 or at or below 0.02 | 605 | 0 |
-| 4. Luna | everything still unsure | 11 | 0 |
-
-Final confusion matrix on the test split:
-
-| | Predicted impersonation | Predicted not |
-|---|---:|---:|
-| **Actually impersonation** | 288 (TP) | 0 (FN) |
-| **Actually not** | 0 (FP) | 426 (TN) |
-
-The data is generated, so read this as a test of the pipeline, not of real-world accuracy. The full walk-through, with train and val counts, is in `../../development/impersonation/README.md`.
-
-## Endpoints
-
-| Method | Path | What it does |
+| Method | Path | Input |
 |---|---|---|
-| GET | `/health` (shared) | status of both incident types; for this one: device, thresholds, whether Luna is available |
-| GET | `/impersonation/clients` | the protected clients you can check against |
-| POST | `/impersonation/predict` | multipart form: `file` = screenshot, `client` = a client id from `/clients`, `use_luna` = true/false (default true) |
+| GET | `/impersonation/clients` | none; lists the valid client ids |
+| POST | `/impersonation/predict` | multipart form: `file` (the screenshot), `client` (an id from `/clients`), `use_luna` (optional, default true) |
 
 ```bash
 curl -F file=@impersonation/samples/imp_p1_apple_0.png -F client=apple http://localhost:8000/impersonation/predict
-python smoke_test.py            # run from inference/: sends the samples to both incident types
 ```
-
-Example answer (shortened):
 
 ```json
 {"prediction": "impersonation", "is_impersonation": true, "decided_by": "rules",
  "client": "apple", "rule_score": 0.84, "ml_probability": 0.99, "luna": null,
  "parsed": {"platform": "X", "display_name": "...", "handle": "...", "link": "...", "followers": 1200},
  "checks": {"avatar_matches_client_logo": true, "avatar_matches_executive_photo": false, "verified_badge": false, "link_on_page": "other domain"},
- "timings_ms": {"ocr": 190, "parse": 0.2, "avatar": 20, "signals": 17, "model": 8, "total": 240}}
+ "timings_ms": {"total": 240}}
 ```
 
-`decided_by` says which stage answered:
-- `rules` (hand-written point rules, about 14% of pages): confident rule score.
-- `ml` (LightGBM, about 82%): model probability at or below 0.02 or at or above 0.98.
-- `luna`: the LLM answered a page that rules and model left unsure (about 4%).
-- `ml_fallback`: the page was unsure and Luna was off, unavailable or failed, so the model's best guess (probability >= 0.5) is returned. Treat these as lower confidence.
+`decided_by`: `rules`, `ml` (LightGBM), `luna`, or `ml_fallback` (unsure and Luna unavailable: the model's best guess, lower confidence).
+Errors: 400 not an image, 404 unknown client, 413 file too large, 503 RDS unavailable.
 
-Errors: `400` not an image, `404` unknown client, `413` file too large, `503` RDS not configured or unreachable.
+## Pipeline
 
-## Settings (environment variables)
+Counts are the benchmark test split: 714 profiles (288 impersonations, 426 not).
+
+```mermaid
+flowchart TD
+    A["Screenshot + client id<br/>714 profiles"] --> B["1. Read the page<br/>OCR, parser, logo/photo match<br/>no filtering"]
+    B --> C{"2. Rules<br/>score >= 0.709 impersonation<br/>score <= 0.43 not"}
+    C -->|"98 decided"| Z["Verdict"]
+    C -->|"616 go on"| D{"3. LightGBM<br/>p >= 0.98 impersonation<br/>p <= 0.02 not"}
+    D -->|"605 decided"| Z
+    D -->|"11 go on"| E["4. Luna (LLM)"]
+    E -->|"11 decided"| Z
+```
+
+| Step | File | Decides when | Decides (test) |
+|---|---|---|---:|
+| 1. Read | `ocr.py`, `layout_parser.py`, `avatar.py`, `signals.py` | never; makes the 102 numbers | 0 |
+| 2. Rules | `rules.py` | score >= 0.709 or <= 0.43 | 98 |
+| 3. LightGBM | `features.py` + `model/frozen.joblib` | probability >= 0.98 or <= 0.02 | 605 |
+| 4. Luna | `luna.py` | everything still unsure | 11 |
+
+Test confusion matrix: TP 288, FP 0, FN 0, TN 426. Details and train/val counts: `../../development/impersonation/README.md`.
+
+## What each model receives
+
+### Rules and LightGBM: one row of 102 numbers per profile
+
+The screenshot is turned into numbers; nothing else (no HTML, no platform data) is used. A sample row (`imp_p1_apple_0`, a fake "Apple Support" account):
+
+| Name | Handle | Bio | Link | Followers | Logo match | Rule score | LightGBM p | Answer |
+|---|---|---|---|---:|---|---:|---:|---|
+| Apple Support | applex | Customer service for Apple. Response within mi... | none | 450 | strong | 0.709 | 0.9994 | impersonation |
+
+The 102 features (the rules use the same numbers; LightGBM also gets each rule's points):
+
+| Group | Feature | Meaning |
+|---|---|---|
+| Name and handle vs brand | `name_brand`, `handle_brand` | fuzzy match (0 to 100) of the display name / handle to the brand; "Acme Support" still matches "Acme" |
+| | `name_has_brand`, `handle_has_brand` | 1 if the brand's letters appear inside the name / handle |
+| | `name_ratio`, `handle_ratio` | whole-string similarity (0 to 100) to the brand |
+| | `name_equals_brand`, `handle_equals_brand` | 1 if identical to the brand |
+| Handle shape | `handle_claim` | 1 if it ends like "official", "support", "help", "hq", "billing" |
+| | `handle_digits`, `handle_len`, `handle_us` | digit count, length, count of `_` and `.` |
+| | `handle_extra` | characters beyond the brand name (-1 if the brand is not in the handle) |
+| Bio and posts | `bio_brand`, `post_brand` | brand named in the bio / number of posts naming it |
+| | `bio_len`, `no_bio` | bio length, 1 if empty |
+| | `n_posts_seen`, `no_posts` | posts visible, 1 if none |
+| | `post_name_match` | share of posts written under the profile's own name (-1 if no posts) |
+| Banner | `banner_text`, `banner_brand` | banner text present / matches the brand |
+| Links | `link_official`, `link_other`, `link_none` | an official-domain link, another domain, or no link |
+| | `link_lookalike`, `link_sim` | another domain that contains the brand or is 70%+ like the official domain; the highest such similarity |
+| | `link_brand_sub` | the brand sits inside another domain |
+| | `link_bio_only` | link appears in the bio but not the link field |
+| | `link_field_official`, `link_field_other` | the link field is the official domain / another domain |
+| Word lists (22) | `h_*` (name + bio) and `p_*` (posts) for `claim`, `disc`, `own`, `scam`, `hire`, `dm`, `partner`, `role`, `personal`, `employee`, `promo` | how many words of each list appear. `claim` = official, support, care; `disc` = fan, parody, unofficial; `own` = "my own opinions"; `scam` = giveaway, crypto, refund; `hire` = careers; `dm` = DM us, WhatsApp; `partner` = reseller, agency; `role` = CEO, director; `personal` = hobbies, family; `employee` = works at; `promo` = discount |
+| | `disc_any`, `scam_any` | 1 if a disclaimer / scam word appears anywhere |
+| Executives | `exec_name`, `exec_name_exact` | best similarity of the name to a protected executive; 1 if 92+ |
+| | `exec_role_bio`, `exec_role_any`, `exec_brand_bio` | bio holds that executive's role / any executive title / the brand name |
+| Profile picture | `av_logo_clip`, `av_logo_ncc` | match to the client logo (CLIP and pixel correlation) |
+| | `av_exec_clip`, `av_exec_ncc` | match to the executive photos |
+| | `av_sil_clip`, `av_sil_ncc` | match to the generic default silhouette |
+| | `av_av_sat`, `av_av_std`, `av_av_mean` | colourfulness, contrast, brightness of the picture |
+| | `av_logo_strong`, `av_exec_strong`, `av_default` | 1 if the logo (ncc > 0.5 or clip > 0.9), executive photo (ncc > 0.70 or clip > 0.80) or silhouette (ncc > 0.7) matches |
+| Account | `followers`, `following`, `posts_n` | counts shown (-1 if not shown; LinkedIn connections count as followers) |
+| | `age_months`, `log_followers`, `foll_ratio` | account age, log of followers, followers per following |
+| | `verified` | 1 if a verified badge is found in the header |
+| Rule points (21) | `r_name_brand` +2, `r_typo_name` +1.5, `r_handle` +1, `r_logo` +2.5, `r_logo_weak` +1, `r_claim` +1.5, `r_link_look` +2, `r_banner` +1, `r_dm` +0.5, `r_exec_name` +2, `r_exec_photo` +2.5, `r_exec_bio` +1.5 | points toward impersonation (the value shown is the maximum) |
+| | `n_scam` -4, `n_verified` -4, `n_disc` -2.5, `n_own` -2, `n_partner` -1.5, `n_link_official` -1.5, `n_personal` -1, `n_egg` -1.5, `n_young_nothing` -0.5 | points against (scam pages are another incident type) |
+| Totals | `rule_score` | all points added, rescaled to 0 to 1 |
+| | `plat_code` | platform as a number (X 0, Facebook 1, Instagram 2, LinkedIn 3, Telegram 4, TikTok 5) |
+
+### Luna: the screenshot and a short fact sheet
+
+Luna sees only the pages the first two stages left unsure. Instructions (summary): decide whether the account pretends to *be* the client or one of its protected executives; fan, parody, partner, namesake, personal and scam accounts are not impersonation. Input for the sample above:
+
+```
+## 1. Client
+{"name": "Apple", "official_domain": "apple.com", "protected_executives": [{"name": "...", "role": "..."}, ...]}
+
+## 3. Automated checks
+{"avatar_matches_client_logo": true, "avatar_matches_protected_executive_photo": false,
+ "verified_badge_detected": false, "link_on_page": "none"}
+
+[client's official logo image]   [screenshot of the profile image]
+```
+Answer: one choice, `impersonation` or `not_impersonation`, with its probability.
+
+## Setup
+
+Needs `RDS_HOST`, `RDS_USER`, `RDS_PASSWORD` (and optionally `OPENAI_API_KEY` for Luna) in the environment or `inference/.env`. A GPU is used when available (about 0.3 s per page; about 4 s on CPU).
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `OPENAI_API_KEY` | none | key for the Luna step; without it unsure pages use `ml_fallback` |
-| `LUNA_ENABLED` | `1` | `0` turns the Luna step off |
-| `LUNA_MODEL` / `LUNA_TIMEOUT_S` | `gpt-6-luna` / `60` | model name and per-call timeout |
+| `OPENAI_API_KEY` | none | Luna key; without it unsure pages use `ml_fallback` |
+| `LUNA_ENABLED` | `1` | `0` turns Luna off |
+| `LUNA_MODEL`, `LUNA_TIMEOUT_S` | `gpt-6-luna`, `60` | model and per-call timeout |
 | `DEVICE` | `auto` | `cpu` forces CPU |
 | `MAX_UPLOAD_MB` | `10` | upload limit |
-| `RDS_HOST`, `RDS_USER`, `RDS_PASSWORD` | none | required: where the client data lives |
 | `RDS_PORT`, `RDS_DBNAME`, `RDS_SSLMODE`, `RDS_SCHEMA` | `5432`, `customerdata`, `require`, `drp_clients` | connection details |
-| `MODEL_FILE` | inside this folder | override the model location |
 
-## Folder
+Client data is read from RDS on every request, so changes apply without a restart. To add a client, add its rows:
 
-```
-engine.py, ocr.py, layout_parser.py, avatar.py, signals.py, rules.py, features.py, luna.py   the steps (below)
-clients.py   reads the clients from RDS
-settings.py  paths and switches
-model/       frozen.joblib: the frozen LightGBM model + the rule and model thresholds
-samples/     a few test screenshots + samples.json (used by ../smoke_test.py; not in git)
-```
-
-### The steps
-
-| File | Step |
+| Needed | RDS table |
 |---|---|
-| `ocr.py` | Reads the text on the screenshot (docTR) |
-| `layout_parser.py` | Turns the text lines into fields: platform, name, handle, bio, link, stats, posts |
-| `avatar.py` | Crops the profile picture and compares it with the client's logo and executive photos (CLIP vectors from RDS, plus a pixel check) |
-| `signals.py` | About 100 numbers from the fields, the avatar scores and the client profile |
-| `rules.py` | Hand-written points, scaled to 0 to 1; decides when the score is clear |
-| `features.py` | Builds the feature table the frozen LightGBM model expects |
-| `luna.py` | Asks Luna (OpenAI Decisions API) about pages the rules and the model leave unsure |
-| `clients.py` | Fetches the client's profile, logo, executive photos and stored vectors from RDS |
-| `settings.py` | Paths and switches; reads the environment and `inference/.env` |
-| `engine.py` | Loads the models once, then runs the steps and builds the answer |
-
-## Adding a client
-Add the client to the RDS tables above (`customers`, a `pipeline_metadata` row for `impersonation`, a main domain, executives, the logo and photos in `assets`, and their vectors in `impersonation_embeddings`). No restart is needed.
-
-## Things to know
-- **Input format.** The layout parser is calibrated to 900 x 900 px screenshots of X, Facebook, Instagram, LinkedIn, Telegram and TikTok profile pages as rendered in the benchmark. Other sizes are resized to 900 x 900 (reported as `image_resized_to_900`); real screenshots may need the parser's positions re-tuned.
-- **Data.** The model was trained and tested on a synthetic benchmark (templated wording, AI-generated executive faces, fictional executives). Check it on real screenshots before relying on it.
-- **Speed.** About 0.3 s per page on a GPU without Luna; about 4 s on CPU only. Luna adds roughly 0.2 to 1.3 s on the few unsure pages. Requests are served one at a time per process (the models are shared); run several processes for more throughput.
-- **Frozen.** `model/frozen.joblib` is the model frozen after training on train and checked on test. To retrain, use the batch pipeline in `../../development/impersonation/code` and copy the new `frozen.joblib` here.
+| the client, used by this pipeline | `customers`, `pipeline_metadata` (`impersonation`) |
+| brand, official domain | `customers`, `customer_domains` (type `main`) |
+| protected executives | `executives` |
+| logo and executive photos | `assets` |
+| their CLIP vectors | `impersonation_embeddings` |

@@ -1,100 +1,142 @@
-# Impersonation detection
+# Impersonation detection (development)
 
-Given a screenshot of a social-media profile and the client it might be impersonating, decide: **impersonation** or **not impersonation**.
-The benchmark is synthetic: 25 real brands, 4,470 profile screenshots across six platforms (X, Facebook, Instagram, LinkedIn, Telegram, TikTok).
+Given a screenshot of a social-media profile and the client it might impersonate, decide: **impersonation** or **not impersonation**.
+Data: a synthetic benchmark of 25 real brands and 4,470 profile screenshots (X, Facebook, Instagram, LinkedIn, Telegram, TikTok).
+The API is in `../../inference/impersonation/`.
 
-## What is in this folder
-
-| Folder | What it is |
+| Folder | Contents |
 |---|---|
-| `code/` | The batch pipeline: numbered scripts 01 to 10 that build, freeze and test the detector, plus `utilities/` |
-| `data/` | The benchmark data: screenshots, train/val/test lists, client assets (not in git, copies are in S3) |
-| `outputs/` | Everything the scripts write: intermediate results, the frozen model, reports (created on first run, not in git) |
+| `code/` | numbered scripts 01 to 10, plus `utilities/` |
+| `data/` | screenshots, train/val/test lists, client assets (not in git; copies in S3) |
+| `outputs/` | everything the scripts write: intermediate results, the frozen model, reports (not in git) |
 
-The HTTP API for this detector is not here: it is in `../../inference/impersonation/` (served together with the web-phish detector).
-
-## How it decides (a cascade)
-
-1. **Read the screenshot.** OCR finds the text, a layout parser turns it into fields (name, handle, bio, link, stats, posts), and the profile picture is compared with the client's logo and executive photos (CLIP and pixel matching). About 100 numbers come out.
-2. **Rules.** Hand-written points (brand in the name, logo match, "official" wording, scam wording, verified badge, ...) are added up and scaled to 0 to 1. A clear score decides (about 14% of pages).
-3. **LightGBM.** A small model on the same numbers decides when it is very sure, at 2% or less or at 98% or more (about 82% of pages).
-4. **Luna** (an LLM, through the OpenAI Decisions API) answers the few pages left unsure (about 4%).
-
-The rule and model thresholds are fitted on train only. The pipeline is frozen with checksums before it is run on test.
-
-## The pipeline step by step: choices, thresholds and counts
+## Pipeline
 
 ```mermaid
 flowchart TD
-    A["Screenshot + client<br/>test: 714 profiles"] --> B["Step 1 read the page<br/>OCR, parser, CLIP + pixel match<br/>no filtering"]
-    B --> C{"Step 2 rules<br/>score 0 to 1<br/>>= 0.709 impersonation<br/><= 0.43 not"}
-    C -->|"98 decided"| Z["Final verdict"]
-    C -->|"616 go on"| D{"Step 3 LightGBM<br/>>= 0.98 impersonation<br/><= 0.02 not"}
+    A["Screenshot + client<br/>test: 714 profiles"] --> B["1. Read the page<br/>OCR, parser, logo/photo match<br/>no filtering"]
+    B --> C{"2. Rules<br/>score >= 0.709 impersonation<br/>score <= 0.43 not"}
+    C -->|"98 decided"| Z["Verdict"]
+    C -->|"616 go on"| D{"3. LightGBM<br/>p >= 0.98 impersonation<br/>p <= 0.02 not"}
     D -->|"605 decided"| Z
-    D -->|"11 go on"| E["Step 4 Luna (LLM)"]
+    D -->|"11 go on"| E["4. Luna (LLM)"]
     E -->|"11 decided"| Z
 ```
 
-### What each step does and why it is set that way
+| Step | What it does | Threshold and how it was set | Decides (test) |
+|---|---|---|---:|
+| 1. Read | OCR (docTR), layout parser, profile picture matched to the client's logo and executive photos (CLIP + pixel correlation) | none, nothing is filtered | 0 of 714 |
+| 2. Rules | 21 hand-written rules add points; the sum is rescaled to 0 to 1 (fixed limits -18.5 and 21.0) | impersonation at **>= 0.709**, not at **<= 0.43**. Searched on train only: the score beyond which 99.5% of pages are right (at least 20 train pages) | 98 |
+| 3. LightGBM | small model on the same 102 numbers; train predictions are out-of-fold | impersonation at **>= 0.98**, not at **<= 0.02** | 605 |
+| 4. Luna | GPT-6 Luna (OpenAI Decisions API) reads the screenshot and a fact sheet | none; it answers directly | 11 |
 
-| Step | What it does | The choice we made | Threshold and how it was set |
-|---|---|---|---|
-| 1. Read | OCR (docTR) finds the text, a layout parser fills name, handle, bio, link, stats and posts; the profile picture is matched to the client's logo and executive photos (CLIP and pixel NCC over 5 crops). About 100 numbers per page, 79 of them signals. | Use the screenshot only, no HTML and no platform data | Nothing is filtered here |
-| 2. Rules | 21 hand-written rules add points (brand in the name, logo match, "official" wording, scam wording, verified badge, ...); the sum is rescaled to 0 to 1 with fixed limits (-18.5 and 21.0) | Rules answer only when the score is clear | **0.709** and **0.43**. Searched on **train only**, in steps of 0.001: the lowest score above which 99.5% of pages are impersonations, and the highest below which 99.5% are not (each must cover at least 20 train pages) |
-| 3. LightGBM | A small model on the same 102 numbers, trained on train | It answers only when very sure; train predictions are out-of-fold so the train funnel is honest | **0.98** and **0.02** (the model's own probability) |
-| 4. Luna | GPT-6 Luna through the OpenAI Decisions API (never a local model) reads the page evidence | Called only for the pages left unsure, so the LLM cost stays small | No threshold; it answers impersonation or not |
+Thresholds and model are fitted on train, then frozen with checksums before the test run.
 
-The thresholds and the model are fitted on train and then **frozen with checksums** (step 08, the test run, stops if a code file changed since step 05); test is read only after that.
+### How much each step filters
 
-### How much each step filters, per split
-
-| Split | Pages | Rules decide | Sent to LightGBM | LightGBM decides | Sent to Luna (Luna decides) |
+| Split | Pages | Rules decide | Sent to LightGBM | LightGBM decides | Sent to Luna |
 |---|---:|---:|---:|---:|---:|
 | Train (17 clients) | 3,036 | 430 (14.2%) | 2,606 | 2,490 (82.0%) | 116 (3.8%) |
 | Val (4 clients) | 720 | 100 (13.9%) | 620 | 593 (82.4%) | 27 (3.8%) |
 | **Test (4 clients)** | **714** | **98 (13.7%)** | **616** | **605 (84.7%)** | **11 (1.5%)** |
 
-Who was right at each step (positives / negatives decided, and wrong answers):
-
-| Split | Rules | LightGBM | Luna |
-|---|---|---|---|
-| Train | 292 / 138, 0 wrong | 863 / 1,627, 1 wrong (a missed impersonation) | 69 / 47, 3 wrong (false alarms) |
-| Val | 72 / 28, 0 wrong | 194 / 399, 0 wrong | 22 / 5, 0 wrong |
-| Test | 63 / 35, 0 wrong | 223 / 382, 0 wrong | 2 / 9, 0 wrong |
+Wrong answers per step: train 0 (rules), 1 (LightGBM), 3 (Luna); val and test 0 everywhere.
 
 ### Final confusion matrices
 
-| | Train: pred. imp. | Train: pred. not | Val: pred. imp. | Val: pred. not | **Test: pred. imp.** | **Test: pred. not** |
+| | Train: pred. impersonation | Train: pred. not | Val: pred. impersonation | Val: pred. not | **Test: pred. impersonation** | **Test: pred. not** |
 |---|---:|---:|---:|---:|---:|---:|
 | **Actually impersonation** | 1,223 | 1 | 288 | 0 | **288** | **0** |
 | **Actually not** | 3 | 1,809 | 0 | 432 | **0** | **426** |
 
-Test: precision 100%, recall 100%, accuracy 714 of 714. Train: 4 errors (99.87%). The test numbers come from `outputs/reports/test_predictions.csv`; the train and val ones from `outputs/work/` (`07_final_metrics_train_val.py`).
-Read the 100% with care: the data is generated, and the parser is calibrated to the way these screenshots are rendered.
+Test accuracy 714 of 714; train 99.87%. Splits are by client, so test clients are never seen in training. The data is generated, so the 100% tests the pipeline, not real-world accuracy.
 
-## Results (synthetic benchmark)
+## What each model receives
 
-| Split | Pages | Accuracy |
+### Rules and LightGBM: one row of 102 numbers per profile
+
+The screenshot is turned into numbers; nothing else (no HTML, no platform data) is used. A sample row (`imp_p1_apple_0`, a fake "Apple Support" account):
+
+| Name | Handle | Bio | Link | Followers | Logo match | Rule score | LightGBM p | Answer |
+|---|---|---|---|---:|---|---:|---:|---|
+| Apple Support | applex | Customer service for Apple. Response within mi... | none | 450 | strong | 0.709 | 0.9994 | impersonation |
+
+The 102 features (the rules use the same numbers; LightGBM also gets each rule's points):
+
+| Group | Feature | Meaning |
 |---|---|---|
-| Train (17 customers) | 3,036 | 99.87% (4 errors) |
-| Val (4 customers) | 720 | 100% |
-| Test (4 customers) | 714 | 100% (714 of 714) |
+| Name and handle vs brand | `name_brand`, `handle_brand` | fuzzy match (0 to 100) of the display name / handle to the brand; "Acme Support" still matches "Acme" |
+| | `name_has_brand`, `handle_has_brand` | 1 if the brand's letters appear inside the name / handle |
+| | `name_ratio`, `handle_ratio` | whole-string similarity (0 to 100) to the brand |
+| | `name_equals_brand`, `handle_equals_brand` | 1 if identical to the brand |
+| Handle shape | `handle_claim` | 1 if it ends like "official", "support", "help", "hq", "billing" |
+| | `handle_digits`, `handle_len`, `handle_us` | digit count, length, count of `_` and `.` |
+| | `handle_extra` | characters beyond the brand name (-1 if the brand is not in the handle) |
+| Bio and posts | `bio_brand`, `post_brand` | brand named in the bio / number of posts naming it |
+| | `bio_len`, `no_bio` | bio length, 1 if empty |
+| | `n_posts_seen`, `no_posts` | posts visible, 1 if none |
+| | `post_name_match` | share of posts written under the profile's own name (-1 if no posts) |
+| Banner | `banner_text`, `banner_brand` | banner text present / matches the brand |
+| Links | `link_official`, `link_other`, `link_none` | an official-domain link, another domain, or no link |
+| | `link_lookalike`, `link_sim` | another domain that contains the brand or is 70%+ like the official domain; the highest such similarity |
+| | `link_brand_sub` | the brand sits inside another domain |
+| | `link_bio_only` | link appears in the bio but not the link field |
+| | `link_field_official`, `link_field_other` | the link field is the official domain / another domain |
+| Word lists (22) | `h_*` (name + bio) and `p_*` (posts) for `claim`, `disc`, `own`, `scam`, `hire`, `dm`, `partner`, `role`, `personal`, `employee`, `promo` | how many words of each list appear. `claim` = official, support, care; `disc` = fan, parody, unofficial; `own` = "my own opinions"; `scam` = giveaway, crypto, refund; `hire` = careers; `dm` = DM us, WhatsApp; `partner` = reseller, agency; `role` = CEO, director; `personal` = hobbies, family; `employee` = works at; `promo` = discount |
+| | `disc_any`, `scam_any` | 1 if a disclaimer / scam word appears anywhere |
+| Executives | `exec_name`, `exec_name_exact` | best similarity of the name to a protected executive; 1 if 92+ |
+| | `exec_role_bio`, `exec_role_any`, `exec_brand_bio` | bio holds that executive's role / any executive title / the brand name |
+| Profile picture | `av_logo_clip`, `av_logo_ncc` | match to the client logo (CLIP and pixel correlation) |
+| | `av_exec_clip`, `av_exec_ncc` | match to the executive photos |
+| | `av_sil_clip`, `av_sil_ncc` | match to the generic default silhouette |
+| | `av_av_sat`, `av_av_std`, `av_av_mean` | colourfulness, contrast, brightness of the picture |
+| | `av_logo_strong`, `av_exec_strong`, `av_default` | 1 if the logo (ncc > 0.5 or clip > 0.9), executive photo (ncc > 0.70 or clip > 0.80) or silhouette (ncc > 0.7) matches |
+| Account | `followers`, `following`, `posts_n` | counts shown (-1 if not shown; LinkedIn connections count as followers) |
+| | `age_months`, `log_followers`, `foll_ratio` | account age, log of followers, followers per following |
+| | `verified` | 1 if a verified badge is found in the header |
+| Rule points (21) | `r_name_brand` +2, `r_typo_name` +1.5, `r_handle` +1, `r_logo` +2.5, `r_logo_weak` +1, `r_claim` +1.5, `r_link_look` +2, `r_banner` +1, `r_dm` +0.5, `r_exec_name` +2, `r_exec_photo` +2.5, `r_exec_bio` +1.5 | points toward impersonation (the value shown is the maximum) |
+| | `n_scam` -4, `n_verified` -4, `n_disc` -2.5, `n_own` -2, `n_partner` -1.5, `n_link_official` -1.5, `n_personal` -1, `n_egg` -1.5, `n_young_nothing` -0.5 | points against (scam pages are another incident type) |
+| Totals | `rule_score` | all points added, rescaled to 0 to 1 |
+| | `plat_code` | platform as a number (X 0, Facebook 1, Instagram 2, LinkedIn 3, Telegram 4, TikTok 5) |
 
-Splits are by customer, so no customer appears in two splits. Test has been scored several times on the same frozen pipeline and nothing was tuned on it.
-Read the 100% with care: the data is generated (templated wording, AI-generated executive faces, fictional executives), and the parser is calibrated to the way these screenshots are rendered. Check on real screenshots before relying on it.
+### Luna: the screenshot and a short fact sheet
 
-## Where the data lives
+Luna sees only the pages the first two stages left unsure. Instructions (summary): decide whether the account pretends to *be* the client or one of its protected executives; fan, parody, partner, namesake, personal and scam accounts are not impersonation. Input for the sample above:
 
-- **Local:** `data/` and `outputs/` (large, not in git).
-- **S3** (`drp-pipeline/impersonation/`): the 4,470 screenshots and the metadata (`train.csv`, `val.csv`, `test.csv`, `classes.json`).
-- **RDS** (schema `drp_clients`): the client profiles, logos, executive photos and their stored CLIP vectors, and the `content` table that gives every screenshot a number, its client and its split. The inference service (`../../inference/impersonation/`) reads clients from here.
+```
+## 1. Client
+{"name": "Apple", "official_domain": "apple.com", "protected_executives": [{"name": "...", "role": "..."}, ...]}
 
-## Quick start
+## 3. Automated checks
+{"avatar_matches_client_logo": true, "avatar_matches_protected_executive_photo": false,
+ "verified_badge_detected": false, "link_on_page": "none"}
+
+[client's official logo image]   [screenshot of the profile image]
+```
+Answer: one choice, `impersonation` or `not_impersonation`, with its probability.
+
+## Run
 
 ```bash
 cd code
-python 01_ocr_read_screenshots.py train val test      # then 02, 04, 05, 06 ... see code/README.md
+python 01_ocr_read_screenshots.py train val test
 ```
-The API is started from the shared `inference/` folder (see `../../inference/README.md`).
 
-Each folder has its own README.
+| Script | Does |
+|---|---|
+| `01_ocr_read_screenshots.py` | OCR of every screenshot |
+| `02_avatar_matching.py` | profile picture against client logo and executive photos |
+| `03_check_parser_accuracy.py` | checks the layout parser |
+| `04_build_signals.py` | builds the signals |
+| `05_fit_cascade_train_val.py` | fits the rule thresholds and LightGBM on train, runs train and val, freezes |
+| `06_luna_unsure_pages.py` | Luna on the unsure train and val pages |
+| `07_final_metrics_train_val.py` | final train and val confusion matrices |
+| `08_run_test.py` | runs the frozen pipeline on test (stops if a frozen file changed) |
+| `09_measure_runtime.py` | timing per stage |
+| `10_build_report.py` | the HTML report |
+
+## Where the data lives
+
+- **Local:** `data/` and `outputs/`.
+- **S3** `drp-pipeline/impersonation/`: the 4,470 screenshots and `train.csv`, `val.csv`, `test.csv`, `classes.json`.
+- **RDS** `drp_clients`: client profiles, logos, executive photos and their CLIP vectors; the `content` table numbers every screenshot. See `../../DataSchema.md`.
