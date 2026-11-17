@@ -22,6 +22,36 @@ A request carries only **the screenshot and a client id**. Only the frozen model
 
 The client id is the RDS `customer_id` (for example `paypal`, `1_1_ionos`). `GET /impersonation/clients` lists the valid ones.
 
+## The pipeline, with counts
+
+Counts are from the benchmark's **test split** (714 profiles from 4 clients the model never saw: 288 impersonations, 426 not). Each stage answers what it is sure about and sends the rest on.
+
+```mermaid
+flowchart TD
+    A["Screenshot + client id<br/>714 profiles"] --> B["1. Read: OCR, layout parser, logo/photo match<br/>about 100 numbers per profile<br/>no filtering, all 714 go on"]
+    B --> C{"2. Rules<br/>score 0 to 1"}
+    C -->|"98 decided (14%)<br/>63 impersonation, 35 not"| Z["Verdict"]
+    C -->|"616 sent on"| D{"3. LightGBM<br/>probability"}
+    D -->|"605 decided (85%)<br/>223 impersonation, 382 not"| Z
+    D -->|"11 unsure, sent on"| E["4. Luna (LLM)"]
+    E -->|"11 decided (2%)<br/>2 impersonation, 9 not"| Z
+```
+
+| Stage | Decides when | Pages decided | Of them wrong |
+|---|---|---:|---:|
+| 2. Rules | score at or above 0.709 (impersonation) or at or below 0.43 (not) | 98 | 0 |
+| 3. LightGBM | probability at or above 0.98 or at or below 0.02 | 605 | 0 |
+| 4. Luna | everything still unsure | 11 | 0 |
+
+Final confusion matrix on the test split:
+
+| | Predicted impersonation | Predicted not |
+|---|---:|---:|
+| **Actually impersonation** | 288 (TP) | 0 (FN) |
+| **Actually not** | 0 (FP) | 426 (TN) |
+
+The data is generated, so read this as a test of the pipeline, not of real-world accuracy. The full walk-through, with train and val counts, is in `../../development/impersonation/README.md`.
+
 ## Endpoints
 
 | Method | Path | What it does |

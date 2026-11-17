@@ -48,6 +48,47 @@ These were tested on the 1,472 test threats that name a place (a street, city, s
 
 Precision is 100% for both by construction: every tested message names a place, so a model cannot wrongly find one.
 
+## The pipeline step by step: choices, thresholds and counts
+
+```mermaid
+flowchart TD
+    A["Message<br/>test: 2,850"] --> B{"Rung 1 location tagger<br/>P(B)+P(I) >= 0.4, else place rules"}
+    B -->|"891 stop: no location<br/>886 not threats, 5 threats lost"| N["Not a threat"]
+    B -->|"1,959 go on"| C{"Rung 2 DistilBERT<br/>P(threat)"}
+    C -->|">= 0.6: 1,474"| Y["Threat<br/>1,467 right, 7 false alarms"]
+    C -->|"< 0.3: 482"| N2["Not a threat<br/>482 right, 0 missed"]
+    C -->|"0.3 to 0.6: 3 go on"| D["Rung 3 GPT-6 Luna, prompt v14"]
+    D -->|"3 decided"| N3["Not a threat<br/>3 right"]
+```
+
+| Step | What it does | The choice we made | Threshold and how it was set | Filters (test) |
+|---|---|---|---|---|
+| Rung 1 | A fine-tuned MiniLMv2 word tagger finds places; if it finds none, place rules and a gazetteer run | A threat must be tied to a real place, so no place means not a threat. Cheap (0.6 ms) and much faster than GLiNER (66 ms) with fewer misses (5 vs 12) | **0.4**, chosen on val: the value that loses the fewest val threats, provided it loses no more than GLiNER (17 vs 23) and lets through at most 10% more non-threats than GLiNER (487 vs 456) | **891 of 2,850 stop (31%)**: 886 not threats, 5 threats |
+| Rung 2 | DistilBERT multilingual P(threat), trained 3 epochs on a balanced train set | Two cut-offs instead of one, so only the middle band costs an LLM call | **>= 0.6** threat, **< 0.3** not a threat, 0.3 to 0.6 unsure | **1,956 of 1,959 decided (99.8%)**: 1,474 threat, 482 not |
+| Rung 3 | GPT-6 Luna, prompt v14, strict JSON, temperature 0 | The LLM only sees what the cheap models cannot settle | none; it answers threat or not | **3 decided** (all not a threat) |
+
+### How the numbers add up (test)
+
+| | Messages | Threats | Not threats |
+|---|---:|---:|---:|
+| All messages | 2,850 | 1,472 | 1,378 |
+| Rung 1 stops | 891 | 5 | 886 |
+| Sent to Rung 2 | 1,959 | 1,467 | 492 |
+| Rung 2 says threat | 1,474 | 1,467 | 7 |
+| Rung 2 says not a threat | 482 | 0 | 482 |
+| Sent to Rung 3 | 3 | 0 | 3 |
+| Rung 3 says not a threat | 3 | 0 | 3 |
+
+### Final confusion matrix (test)
+
+| | Predicted threat | Predicted not |
+|---|---:|---:|
+| **Actually a threat** | 1,467 (TP) | 5 (FN) |
+| **Actually not** | 7 (FP) | 1,371 (TN) |
+
+Precision 99.53%, recall 99.66%, F1 99.59%. These are the shipped results (`outputs/shipped_results/test_run_summary.json`). Re-running Rung 3 can change one borderline message: our own re-run of `04_run_ladder.py` gave 8 false alarms instead of 7 because Luna answered one message differently.
+Only the test split goes through the whole ladder; train and val are used to train Rung 2 and to pick the Rung 1 cut-off.
+
 ## Data (`data/`)
 
 **Sources**

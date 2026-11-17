@@ -33,6 +33,30 @@ Body: `text` (required), `use_luna` (default true). Errors: 400 empty or too lon
 Results on the benchmark's test set (2,850 messages), from the development run: 891 messages stop at rung 1, 1,956 are decided by rung 2, 3 go to Luna;
 precision about 99.5%, recall about 99.7%. See `../../development/PhysicalThreatFacility/README.md`.
 
+## The pipeline, with counts
+
+Counts are from the benchmark's **test split**: 2,850 messages (1,472 threats, 1,378 not).
+
+```mermaid
+flowchart TD
+    A["Message<br/>2,850"] --> B{"Rung 1: names a location?<br/>P(place) >= 0.4, then place rules"}
+    B -->|"no location: 891 stop<br/>886 not threats, 5 threats"| N["Not a threat"]
+    B -->|"1,959 go on"| C{"Rung 2: DistilBERT P(threat)"}
+    C -->|">= 0.6: 1,474 threat"| Y["Threat"]
+    C -->|"< 0.3: 482 not a threat"| N
+    C -->|"0.3 to 0.6: 3 go on"| D["Rung 3: GPT-6 Luna"]
+    D -->|"3 decided: not a threat"| N
+```
+
+Final confusion matrix on the test split:
+
+| | Predicted threat | Predicted not |
+|---|---:|---:|
+| **Actually a threat** | 1,467 (TP) | 5 (FN) |
+| **Actually not** | 7 (FP) | 1,371 (TN) |
+
+Precision 99.53%, recall 99.66%. The 5 misses are all at rung 1 (the place is only a hashtag or code); the 7 false alarms are all rung 2. Only 3 of 2,850 messages reach the LLM, so it costs about $0.002 for the whole set against $0.847 if every message went to Luna. The full walk-through is in `../../development/PhysicalThreatFacility/README.md`.
+
 ## Notes
 - The models were checked against the development pipeline on all 2,850 test messages: same location decision and same rung on all of them, and the same answer on all
   2,847 messages that rungs 1 and 2 decided. P(threat) differs by at most 0.0013 (fp16 rounding), and three extracted place names differ by a word or two.

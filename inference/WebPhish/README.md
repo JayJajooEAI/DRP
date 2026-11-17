@@ -45,6 +45,39 @@ A link with one capture returns `records: 1` and one result.
 Otherwise `not_web_phish`. Each result also lists every check's probability, the logo similarity, the URL score, the stored capture used
 and the time each step took.
 
+## The pipeline, with counts
+
+Counts are from the benchmark's **test split**: 1,324 stored pages from 25 clients (987 are web phishes, 337 are not). Steps 1 to 4 only collect evidence for every page; the filtering is in steps 5 to 7.
+
+```mermaid
+flowchart TD
+    A["Link + client id<br/>test: 1,324 pages"] --> B["1. HTML fields, 2. OCR text, 3. logo match, 4. suspicious-URL score<br/>evidence for the prompt, no filtering"]
+    B --> C["5. One prompt per page"]
+    C --> D{"6a. check 2: branded as the client?<br/>probability >= 0.5"}
+    D -->|"no: 24 stop, not a web phish"| N["Not a web phish"]
+    D -->|"yes: 1,300 go on"| E{"6b. check 3: way to enter<br/>credentials or payment data?"}
+    E -->|"none: 99 stop"| N
+    E -->|"3.1 or 3.2: 1,201 go on"| F{"7. check 4: not on the<br/>client's own domain?"}
+    F -->|"own domain: 213 stop"| N
+    F -->|"988 flagged"| Y["Web phish"]
+```
+
+| Step | Stops | Of them wrongly stopped (real web phishes) |
+|---|---:|---:|
+| check 2 says not branded | 24 | 5 |
+| check 3 says none | 99 | 2 |
+| check 4 says own domain | 213 | 0 |
+| **Flagged as web phish** | **988** | 8 of them are not web phishes |
+
+Final confusion matrix on the test split:
+
+| | Predicted web phish | Predicted not |
+|---|---:|---:|
+| **Actually web phish** | 980 (TP) | 7 (FN) |
+| **Actually not** | 8 (FP) | 329 (TN) |
+
+Precision 99.19%, recall 99.29%. A request sends one link, and the API runs this on every stored capture of it. The full walk-through, with train and val counts, is in `../../development/WebPhish/README.md`.
+
 ## Files
 
 | Path | What it is |
