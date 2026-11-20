@@ -15,6 +15,9 @@
 /development/WebPhish/outputs/
 /development/WebPhish/.venv/
 !/development/PhysicalThreatFacility/
+!/development/SuspiciousDomain/
+/development/SuspiciousDomain/data/
+/development/SuspiciousDomain/outputs/
 /development/PhysicalThreatFacility/data/
 /development/PhysicalThreatFacility/outputs/
 /development/impersonation/data/*
@@ -42,6 +45,7 @@
 /inference/impersonation/samples/
 !/inference/WebPhish/
 !/inference/PhysicalThreatFacility/
+!/inference/SuspiciousDomain/
 
 # WebPhish weight files over 100 MB (the language models and the Phishpedia logo models); copy them in by hand
 /inference/WebPhish/model/check2/model/model.safetensors

@@ -9,8 +9,10 @@ Endpoints
     GET  /webphish/clients         -> the clients that can be checked for web phishing
     POST /webphish/predict         -> JSON body: {"client": "<id>", "url": "<link>"}
     POST /physicalthreat/predict   -> JSON body: {"text": "<a message>"}  (optional: "use_luna": false)
+    GET  /suspiciousdomain/clients -> the clients that can be checked for suspicious domains
+    POST /suspiciousdomain/predict -> JSON body: {"client": "<id>", "domain": "<domain>"}
 
-Each incident type lives in its own folder (impersonation/, WebPhish/, PhysicalThreatFacility/) with its own code and models; this file only routes requests.
+Each incident type lives in its own folder (impersonation/, WebPhish/, PhysicalThreatFacility/, SuspiciousDomain/) with its own code and models; this file only routes requests.
 Set INCIDENT_TYPES=impersonation, or a comma-separated list such as impersonation,WebPhish, to serve only those. If one of them fails to load, the other keeps working
 and the failing one answers 503 with the reason.
 """
@@ -28,7 +30,7 @@ from pydantic import BaseModel, Field
 
 ENGINES = {}   # incident type -> its loaded engine
 ERRORS = {}    # incident type -> why it did not load
-WANTED = [t.strip() for t in os.environ.get("INCIDENT_TYPES", "impersonation,WebPhish,PhysicalThreatFacility").split(",") if t.strip()]
+WANTED = [t.strip() for t in os.environ.get("INCIDENT_TYPES", "impersonation,WebPhish,PhysicalThreatFacility,SuspiciousDomain").split(",") if t.strip()]
 
 
 def _make(name):
@@ -38,6 +40,8 @@ def _make(name):
         from WebPhish.engine import Engine
     elif name == "PhysicalThreatFacility":
         from PhysicalThreatFacility.engine import Engine
+    elif name == "SuspiciousDomain":
+        from SuspiciousDomain.engine import Engine
     else:
         raise ValueError(f"unknown incident type '{name}'")
     return Engine()
@@ -168,6 +172,44 @@ def pt_predict(req: PhysicalThreatRequest):
         raise HTTPException(400, str(err))
 
 
+# ---------------------------------------------------------------- suspicious domain
+sd = APIRouter(prefix="/suspiciousdomain", tags=["suspiciousdomain"])
+
+
+class SuspiciousDomainRequest(BaseModel):
+    """The domain to check and the client it might target. The example below is pre-filled in /docs."""
+    client: str = Field(description="A client id from GET /suspiciousdomain/clients", examples=["harborbank"])
+    domain: str = Field(description="The domain (a full link is cut down to its host)", examples=["hraborbank.com"])
+    model_config = {"json_schema_extra": {"example": {"client": "harborbank", "domain": "hraborbank.com"}}}
+
+
+@sd.get("/clients")
+def sd_clients():
+    from SuspiciousDomain.clients import RdsUnavailable
+    try:
+        return engine("SuspiciousDomain").clients.ids()
+    except RdsUnavailable as e:
+        raise HTTPException(503, str(e))
+
+
+@sd.post("/predict")
+def sd_predict(req: SuspiciousDomainRequest):
+    from SuspiciousDomain.clients import RdsUnavailable
+    from SuspiciousDomain.engine import BadInput, NoLookup, UnknownClient
+    e = engine("SuspiciousDomain")
+    try:
+        return e.predict(req.client, req.domain)
+    except UnknownClient:
+        raise HTTPException(404, f"unknown client '{req.client}'; see GET /suspiciousdomain/clients")
+    except NoLookup:
+        raise HTTPException(404, "no stored lookup for this domain")
+    except BadInput as err:
+        raise HTTPException(400, str(err))
+    except RdsUnavailable as err:
+        raise HTTPException(503, str(err))
+
+
 app.include_router(imp)
 app.include_router(wp)
 app.include_router(pt)
+app.include_router(sd)

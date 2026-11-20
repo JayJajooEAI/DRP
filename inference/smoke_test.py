@@ -55,3 +55,10 @@ if health["incident_types"].get("PhysicalThreatFacility", {}).get("loaded"):
         r = post_json("/physicalthreat/predict", {"text": s["text"]})
         ok = "OK " if r["prediction"] == s["truth"] else "BAD"
         print(" ", ok, s["expected_rung"], "->", r["prediction"], "| decided by", r["decided_by"], "| p_threat", r["p_threat"], "|", r["timings_ms"]["total"], "ms")
+
+if health["incident_types"].get("SuspiciousDomain", {}).get("loaded"):
+    print("\nsuspiciousdomain")
+    for s in json.load(open(HERE / "SuspiciousDomain" / "samples" / "samples.json")):
+        r = post_json("/suspiciousdomain/predict", {"client": s["client"], "domain": s["domain"]})
+        ok = "OK " if r["prediction"] == s["truth"] else "BAD"
+        print(" ", ok, s["domain"], "->", r["prediction"], "|", r["decided_by"], "|", r["timings_ms"]["total"], "ms")

@@ -1,0 +1,38 @@
+[
+ {
+  "client": "apexmutual",
+  "domain": "apexnmutual.com",
+  "truth": "suspicious_domain_registration",
+  "note": "a misspelling of the brand"
+ },
+ {
+  "client": "apexmutual",
+  "domain": "verify-apexmutual.com",
+  "truth": "domains_parked",
+  "note": "brand + extra word, on a parking nameserver"
+ },
+ {
+  "client": "apexmutual",
+  "domain": "apexmutual.com",
+  "truth": "none",
+  "note": "the client's own domain"
+ },
+ {
+  "client": "apexmutual",
+  "domain": "apexclimbinggym.com",
+  "truth": "none",
+  "note": "a name the rules could not settle; the model says harmless"
+ },
+ {
+  "client": "apexmutual",
+  "domain": "drivesure-rewards.com",
+  "truth": "suspicious_domain_registration",
+  "note": "a name the rules could not settle; the model says relevant"
+ },
+ {
+  "client": "apexmutual",
+  "domain": "capexmutualbenchmarks.com",
+  "truth": "none",
+  "note": "brand + extra word, cleared by the alert model"
+ }
+]

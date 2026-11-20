@@ -28,9 +28,9 @@ The other schemas in the same database (`public`, `holdout`, `bak_20260814`, `ba
 | `webp_logo_embeddings` | 460 | `asset_id` | Phishpedia (BiT) logo vectors, used by WebPhish |
 | `content` | 33,205 | `content_id` (unique `s3_bucket, s3_key`) | Index of the benchmark items: `customer_id`, `pipeline`, `s3_bucket`, `s3_key`, `received_at`, `split`. Per pipeline: `impersonation` 4,470, `webp` 6,619, `susdom` 2,923, `physical_threat` 19,193 (no client) |
 | `page_captures` | 6,619 | `content_id` | The stored page for each web-phish link: `url`, `final_url`, `html` (bytea), `screenshot` (bytea). A link can be captured more than once, giving more than one `content_id` for the same client and `url` |
-| `domain_lookups` | 2,923 | `domain` | Suspicious-domain lookups (RDAP, DNS, HTTP, certificate and page-content flags). Not used by the three APIs yet |
-| `domain_ownership` | 10 | `customer_id` | Registrant, registrar and nameservers of a client's own domains (susdom) |
-| `tranco_ranks` | 71 | `domain` | Popularity rank of well-known domains (susdom) |
+| `domain_lookups` | 2,923 | `domain` | Suspicious-domain lookups (RDAP, DNS, HTTP, certificate and page-content flags). Read by the suspicious-domain API: one stored lookup per domain |
+| `domain_ownership` | 10 | `customer_id` | The registrant organisation of a client's own domains (susdom); the suspicious-domain API reads it |
+| `tranco_ranks` | 71 | `domain` | Popularity rank of well-known domains (susdom); read by the suspicious-domain API |
 
 ### 1.2 Entity relationship diagram
 
@@ -215,11 +215,14 @@ One server, `inference/app.py`, port 8000. Interactive docs with pre-filled exam
 | `POST /impersonation/predict` | **multipart form:** `file` (PNG or JPG of the profile screenshot, size capped by `MAX_UPLOAD_MB`), `client` (a `customer_id` from `/impersonation/clients`), `use_luna` (optional, default true) | verdict, which stage decided (rules, LightGBM or Luna), scores. See `inference/impersonation/README.md` |
 | `GET /webphish/clients` | nothing | the 25 valid client ids |
 | `POST /webphish/predict` | **JSON:** `{"client": "<customer_id>", "url": "<link>"}`. Nothing else | `{client, link, records, web_phish_records, results[]}`: the API runs every stored capture of that link for that client, `records` is how many it found, and `results` has one verdict per capture |
+| `GET /suspiciousdomain/clients` | nothing | the 10 valid client ids |
+| `POST /suspiciousdomain/predict` | **JSON:** `{"client": "<customer_id>", "domain": "<domain>"}`. Nothing else | `{client, domain, prediction (suspicious_domain_registration / domains_parked / none), decided_by, trace[], facts, timings_ms}` |
 | `POST /physicalthreat/predict` | **JSON:** `{"text": "<message>", "use_luna": true}`. `use_luna` is optional. No client | `{prediction (threat / not_threat), decided_by (rung1, rung2, rung3, rung2_fallback), location{found, places, by}, p_threat, luna, luna_skipped, timings_ms}` |
 
 ### 4.3 Rules that matter when calling
 
-- **`client` is the `customer_id` slug**, never the display name (`1_1_ionos`, not `1&1 Ionos`). Impersonation and WebPhish have different client lists, so ask the matching `/clients` endpoint. An unknown id gives 404.
+- **`client` is the `customer_id` slug**, never the display name (`1_1_ionos`, not `1&1 Ionos`). Impersonation, WebPhish and SuspiciousDomain have different client lists, so ask the matching `/clients` endpoint. An unknown id gives 404.
+- **SuspiciousDomain checks stored lookups, not live ones.** The domain must already be in `domain_lookups`; otherwise the answer is 404. The API does not query WHOIS, DNS or the web.
 - **WebPhish checks stored pages, not live ones.** The link must already be in `page_captures` for that client. If it is not, `records` is 0 and `results` is empty. The match is on the exact `url` string. The API does not fetch the page.
 - **Impersonation needs the image bytes**, uploaded as a file. The client's logos, executive photos and embeddings come from RDS, so the caller sends only the screenshot and the id.
 - **Physical threat needs no client or database.** Send the text. It must not be empty (400 otherwise) and has a length limit (`MAX_TEXT_CHARS`).
